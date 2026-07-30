@@ -14,6 +14,7 @@ let _availableSources = [];
 let _sourcesMap = {};
 
 let _breakdownCache = {};
+let _dismissedLoaded = new Set();
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -187,7 +188,181 @@ async function loadStats() {
     ? new Date(s.last_run.replace(' ', 'T') + 'Z').toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
     : 'never';
   document.getElementById('last-run').textContent = 'last run ' + lastRun;
+
+  loadCalibSummary();
+  loadCost();
 }
+
+async function loadCalibSummary() {
+  let d;
+  try {
+    const r = await fetch('/api/eval/report');
+    if (_redirectIfUnauthenticated(r)) return;
+    d = await r.json();
+  } catch {
+    return;
+  }
+  document.getElementById('calib-p5').textContent  = d.precision_at_5  != null ? Math.round(d.precision_at_5 * 100) + '%' : '—';
+  document.getElementById('calib-p10').textContent = d.precision_at_10 != null ? Math.round(d.precision_at_10 * 100) + '%' : '—';
+  document.getElementById('calib-div-count').textContent = (d.divergence_cases || []).length;
+}
+
+async function loadCost() {
+  let u;
+  try {
+    const r = await fetch('/api/usage/summary');
+    if (_redirectIfUnauthenticated(r)) return;
+    u = await r.json();
+  } catch {
+    return;
+  }
+  document.getElementById('cost-per100').textContent = u.cost_per_100_usd != null ? `$${u.cost_per_100_usd.toFixed(2)}` : '—';
+  document.getElementById('cost-today').textContent  = u.today_cost_usd != null ? `$${u.today_cost_usd.toFixed(3)}` : '—';
+  document.getElementById('cost-total').textContent  = u.total_cost_usd != null ? `$${u.total_cost_usd.toFixed(2)}` : '—';
+}
+
+// ── Preference profile / "what the agent learned" (read-only) ─────────────────
+
+function _humanDim(dim) { return String(dim || '').replace(/_/g, ' '); }
+function _humanValue(v) { return v ? String(v).replace(/_/g, ' ') : ''; }
+
+const _SIGNAL_TAG_LABEL = { ACCEPT: 'Likes', REJECT: 'Avoids', INFER: 'Inferred', NEUTRAL: 'No signal' };
+const _SIGNAL_TAG_CLASS = { ACCEPT: 'acc', REJECT: 'rej', INFER: 'inf', NEUTRAL: 'neu' };
+
+function _signalMainText(s) {
+  if (s.note) return s.note;
+  const val = _humanValue(s.value);
+  const dim = _humanDim(s.dim);
+  if (s.type === 'NEUTRAL') return `No clear pattern yet on ${dim}.`;
+  if (s.type === 'INFER') return `Likely prefers ${dim}${val ? ': ' + val : ''}, based on limited evidence.`;
+  return `${s.type === 'ACCEPT' ? 'Favors' : 'Avoids'} ${dim}${val ? ': ' + val : ''}.`;
+}
+
+function _signalMetaText(s) {
+  const parts = [_humanDim(s.dim) + (s.value ? ': ' + _humanValue(s.value) : '')];
+  if (s.conf) parts.push(s.conf.toLowerCase() + ' confidence');
+  if (s.n_match != null && s.n_total != null) parts.push(`${s.n_match}/${s.n_total} examples`);
+  else if (s.n_total != null) parts.push(`from ${s.n_total} examples`);
+  return parts.join(' · ');
+}
+
+function _renderSignalChips(signals) {
+  const notable = (signals || []).filter(s => s.type === 'ACCEPT' || s.type === 'REJECT' || s.type === 'INFER').slice(0, 6);
+  if (!notable.length) return '<span class="lc-empty">No strong signals yet — apply/reject a few more jobs, then distill locally.</span>';
+  return notable.map(s => {
+    const cls = _SIGNAL_TAG_CLASS[s.type] || 'inf';
+    return `<div class="sig"><span class="tag ${cls}">${_SIGNAL_TAG_LABEL[s.type] || s.type}</span><span class="txt">${esc(_signalMainText(s))}</span></div>`;
+  }).join('');
+}
+
+function _renderSignalList(signals) {
+  if (!signals || !signals.length) return '';
+  return `<div class="pref-list">${signals.map(s => {
+    const cls = _SIGNAL_TAG_CLASS[s.type] || 'inf';
+    const neutralCls = s.type === 'NEUTRAL' ? ' neutral' : '';
+    return `
+      <div class="pref-row${neutralCls}">
+        <span class="pref-tag ${cls}">${_SIGNAL_TAG_LABEL[s.type] || s.type}</span>
+        <div class="pref-body">
+          <div class="pref-main">${esc(_signalMainText(s))}</div>
+          <div class="pref-meta">${esc(_signalMetaText(s))}</div>
+        </div>
+      </div>`;
+  }).join('')}</div>`;
+}
+
+async function _loadLearnedCard() {
+  const el = document.getElementById('lc-signals');
+  try {
+    const r = await fetch('/api/preference-profile');
+    if (_redirectIfUnauthenticated(r)) return;
+    const d = await r.json();
+    if (!d.profile) { el.innerHTML = '<span class="lc-empty">No profile yet — run distillation locally in JobAgent.</span>'; return; }
+    if (!d.profile.signals || !d.profile.signals.length) { el.innerHTML = '<span class="lc-empty">' + esc((d.profile.content || '').slice(0, 200)) + '…</span>'; return; }
+    el.innerHTML = _renderSignalChips(d.profile.signals);
+  } catch {
+    el.innerHTML = '<span class="lc-empty">Error loading profile.</span>';
+  }
+}
+
+function openLearnedModal() {
+  document.getElementById('learned-modal').classList.add('open');
+  _loadLearnedFull();
+}
+function closeLearnedModal() { document.getElementById('learned-modal').classList.remove('open'); }
+
+async function _loadLearnedFull() {
+  const meta = document.getElementById('learned-meta');
+  const full = document.getElementById('learned-full');
+  try {
+    const r = await fetch('/api/preference-profile');
+    const d = await r.json();
+    if (!d.profile) { meta.textContent = ''; full.textContent = 'No profile yet. Run distillation locally in JobAgent.'; return; }
+    const p = d.profile;
+    const updated = new Date(p.updated_at.replace(' ', 'T') + 'Z').toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    meta.innerHTML = `<span>Applied: ${p.applied_count}</span><span>Rejected: ${p.rejected_count}</span><span>Updated: ${updated}</span>`;
+    full.innerHTML = (p.signals && p.signals.length) ? _renderSignalList(p.signals) : esc(p.content);
+  } catch {
+    full.textContent = 'Error loading profile.';
+  }
+}
+
+// ── Eval / Calibration modal ────────────────────────────────────────────────────
+
+async function openEvalModal() {
+  document.getElementById('eval-modal').classList.add('open');
+  document.getElementById('eval-body').innerHTML = '<p>Loading…</p>';
+
+  let data;
+  try {
+    const r = await fetch('/api/eval/report');
+    data = await r.json();
+  } catch {
+    document.getElementById('eval-body').innerHTML = '<p>Failed to load report.</p>';
+    return;
+  }
+
+  const cases = data.divergence_cases || [];
+  const rows = cases.map(c => `
+    <tr>
+      <td><span class="kind ${c.divergence_type === 'false_positive' ? 'fp' : 'fn'}"><span class="dt"></span>${c.divergence_type === 'false_positive' ? 'Overrated' : 'Underrated'}</span></td>
+      <td>${esc(c.title)}</td>
+      <td class="co-cell">${esc(c.company)}</td>
+      <td class="rk">${c.listwise_rank != null ? `#${c.listwise_rank}` : '—'}</td>
+    </tr>`).join('');
+
+  const wa = data.would_apply || {};
+  const waPrecisionPct = wa.precision != null ? Math.round(wa.precision * 100) : null;
+  const waMeetsGate = waPrecisionPct != null && waPrecisionPct >= 90;
+
+  document.getElementById('eval-body').innerHTML = `
+    <div class="eval-metrics">
+      <div class="eval-metric"><div class="ev">${data.precision_at_5 != null ? Math.round(data.precision_at_5 * 100) + '%' : '—'}</div><div class="el">PRECISION@5</div></div>
+      <div class="eval-metric"><div class="ev">${data.precision_at_10 != null ? Math.round(data.precision_at_10 * 100) + '%' : '—'}</div><div class="el">PRECISION@10</div></div>
+      <div class="eval-metric"><div class="ev">${data.total_ranked ?? '—'}</div><div class="el">RANKED</div></div>
+      <div class="eval-metric"><div class="ev">${cases.length}</div><div class="el">DIVERGENCES</div></div>
+    </div>
+    <p class="calib-explain"><b>Precision@K</b> looks at the top-K AI-ranked jobs you've since made a decision on, and asks: how many were good calls? A <b>divergence case</b> is either a job ranked in the top 5 that you rejected (the model overrated it), or a job ranked #16+ that you applied to anyway (the model underrated it).</p>
+
+    <div class="wa-gate ${waMeetsGate ? 'met' : ''}">
+      <div class="wa-gate-hd">
+        <span class="wa-gate-title">Would-apply gate</span>
+        <span class="wa-gate-pct">${waPrecisionPct != null ? waPrecisionPct + '%' : '—'} <span class="wa-gate-target">/ 90% target</span></span>
+      </div>
+      <div class="wa-gate-bar"><div class="wa-gate-fill" style="width:${waPrecisionPct != null ? Math.min(100, waPrecisionPct) : 0}%"></div></div>
+      <div class="wa-gate-detail">${wa.flagged_total ?? 0} flagged &middot; ${wa.decided ?? 0} decided (${wa.applied ?? 0} applied, ${wa.rejected ?? 0} rejected) &middot; ${(wa.flagged_total ?? 0) - (wa.decided ?? 0)} still open</div>
+      <p class="calib-explain">Of the jobs flagged as <b>"would apply"</b> (score ≥ ${data.would_apply_score_floor ?? 7.0}, no dealbreaker risk), what fraction were actually applied to once decided.</p>
+    </div>
+
+    <div class="eval-tbl-h">Divergence cases <span class="cnt">(${cases.length})</span></div>
+    <div class="div-scroll">
+      <table class="div-tbl">
+        <thead><tr><th>Type</th><th>Title</th><th>Company</th><th>Rank</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" class="div-empty">No divergence cases yet.</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+function closeEvalModal() { document.getElementById('eval-modal').classList.remove('open'); }
 
 // ── Status filter (funnel + tabs share one source of truth) ───────────────────
 
@@ -208,13 +383,22 @@ document.querySelectorAll('.funnel .step[data-status]').forEach(step => {
 // ── Sources / jobs loading ─────────────────────────────────────────────────────
 
 async function _loadSources() {
-  const r = await fetch('/api/sources');
-  _availableSources = await r.json();
-  _sourcesMap = Object.fromEntries(_availableSources.map(s => [s.id, s.name]));
+  // Never let this block the initial jobs load — a failure here shouldn't leave
+  // the dashboard looking empty just because the source dropdown didn't populate.
+  try {
+    const r = await fetch('/api/sources');
+    if (_redirectIfUnauthenticated(r)) return;
+    const sources = await r.json();
+    if (!Array.isArray(sources)) return;
+    _availableSources = sources;
+    _sourcesMap = Object.fromEntries(_availableSources.map(s => [s.id, s.name]));
 
-  const sel = document.getElementById('source-filter');
-  while (sel.options.length > 1) sel.remove(1);
-  _availableSources.forEach(s => sel.add(new Option(s.name, s.id)));
+    const sel = document.getElementById('source-filter');
+    while (sel.options.length > 1) sel.remove(1);
+    _availableSources.forEach(s => sel.add(new Option(s.name, s.id)));
+  } catch {
+    // ignored — source dropdown just stays at "All sources"
+  }
 }
 
 async function loadJobs() {
@@ -272,24 +456,38 @@ function _renderSecondOpinion(j) {
     </div>`;
 }
 
-function _scoreItemLi(text, isPro) {
-  const icon = isPro
+function _scoreItemLi(jobId, type, idx, text) {
+  const icon = type === 'pro'
     ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>'
     : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>';
-  return `<li class="score-item">${icon}<span class="txt">${esc(text)}</span></li>`;
+  const key = `${jobId}:${type}:${idx}`;
+  return `
+    <li class="score-item" id="si-${esc(key)}">
+      ${icon}<span class="txt">${esc(text)}</span>
+      <button type="button" class="dismiss-x" onclick="toggleDismissPop('${escJs(jobId)}','${type}',${idx})" title="Not relevant to me">×</button>
+      <div class="dismiss-pop" id="dp-${esc(key)}">
+        <input type="text" id="dp-input-${esc(key)}" placeholder="Why doesn't this matter to you?"
+               onkeydown="if(event.key==='Enter') confirmDismiss('${escJs(jobId)}','${type}',${idx}); if(event.key==='Escape') toggleDismissPop('${escJs(jobId)}','${type}',${idx})">
+        <button type="button" class="go" onclick="confirmDismiss('${escJs(jobId)}','${type}',${idx})">Save</button>
+        <button type="button" class="cancel" onclick="toggleDismissPop('${escJs(jobId)}','${type}',${idx})">Cancel</button>
+      </div>
+    </li>`;
 }
 
 function _renderBreakdownSection(jobId, b) {
   if (!b || (!(b.pros || []).length && !(b.cons || []).length && !Object.keys(b.sub_scores || {}).length)) return '';
   _breakdownCache[jobId] = b;
+  // Fresh DOM for this job means any earlier "already loaded" dismissed-state fetch
+  // no longer applies to what's on screen now — force a re-fetch next time it's opened.
+  _dismissedLoaded.delete(jobId);
   const subs = Object.entries(b.sub_scores || {}).map(([key, val]) => `
     <div class="ss">
       <span class="lab">${esc(_SUBSCORE_LABELS[key] || key)}</span>
       <div class="track"><div class="fill" style="width:${Math.max(0, Math.min(100, (val / 10) * 100))}%"></div></div>
       <span class="val">${esc(String(val))}</span>
     </div>`).join('');
-  const pros = (b.pros || []).map((p) => _scoreItemLi(p, true)).join('');
-  const cons = (b.cons || []).map((c) => _scoreItemLi(c, false)).join('');
+  const pros = (b.pros || []).map((p, i) => _scoreItemLi(jobId, 'pro', i, p)).join('');
+  const cons = (b.cons || []).map((c, i) => _scoreItemLi(jobId, 'con', i, c)).join('');
 
   return `
     <button type="button" class="disc-toggle" id="disc-bd-${esc(jobId)}" onclick="toggleBreakdown('${esc(jobId)}')">
@@ -427,13 +625,27 @@ function render() {
   container.classList.toggle('selecting', _selectMode);
   container.innerHTML = '';
 
+  // Always clear any pager/load-more left over from whatever tab was showing before —
+  // it lives as a sibling of #jobs-container, so clearing container.innerHTML above
+  // doesn't remove it, and the empty-results branch below used to return before ever
+  // reaching _renderPager()'s own cleanup, leaving a stale "Load more" bar on screen.
+  const oldPager = document.getElementById('pager-wrap');
+  if (oldPager) oldPager.remove();
+
   if (!_lazyJobs.length) {
-    container.innerHTML = '<div class="no-results">No jobs found.</div>';
+    container.innerHTML = `<div class="no-results">${_emptyStateMessage()}</div>`;
     return;
   }
 
   _appendBatch(container, BATCH_SIZE);
   _renderPager();
+}
+
+function _emptyStateMessage() {
+  const filtered = _badgeFilters.size || document.getElementById('search').value || document.getElementById('source-filter').value;
+  if (filtered) return 'No jobs match the current filters.';
+  if (currentStatus === 'new') return 'No new job offers here. Run the agent locally.';
+  return 'No jobs found.';
 }
 
 function _appendBatch(container, count) {
@@ -498,20 +710,85 @@ function _loadMore() {
 }
 
 function _goToPage(n) {
+  // Numbered page buttons jump straight to that page's own slice — unlike _loadMore(),
+  // which appends cumulatively, clicking "8" should show only page 8, not pages 1-8 at once.
   const container = document.getElementById('jobs-container');
-  const targetCount = Math.min(n * BATCH_SIZE, _lazyJobs.length);
-  if (targetCount > _renderedCount) _appendBatch(container, targetCount - _renderedCount);
+  const start = (n - 1) * BATCH_SIZE;
+  const end = Math.min(start + BATCH_SIZE, _lazyJobs.length);
+  container.innerHTML = '';
+  _renderedCount = start;
+  _appendBatch(container, end - start);
   _renderPager();
-  const idx = (n - 1) * BATCH_SIZE;
-  const target = container.children[idx];
-  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  container.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ── Disclosure toggles ─────────────────────────────────────────────────────────
 
-function toggleBreakdown(jobId) {
+async function toggleBreakdown(jobId) {
+  const opening = !document.getElementById(`bd-${jobId}`).classList.contains('open');
   document.getElementById(`bd-${jobId}`).classList.toggle('open');
   document.getElementById(`disc-bd-${jobId}`).classList.toggle('open');
+  if (opening && !_dismissedLoaded.has(jobId)) {
+    _dismissedLoaded.add(jobId);
+    try {
+      const r = await fetch(`/api/jobs/${jobId}/dismissed-items`);
+      const d = await r.json();
+      const b = _breakdownCache[jobId] || {};
+      (d.items || []).forEach(it => {
+        const idx = (b[it.item_type + 's'] || []).indexOf(it.item_text);
+        if (idx !== -1) _markItemDismissed(jobId, it.item_type, idx, it.reason);
+      });
+    } catch {}
+  }
+}
+
+// ── Dismiss a pro/con as not relevant ─────────────────────────────────────────
+
+function toggleDismissPop(jobId, type, idx) {
+  const key = `${jobId}:${type}:${idx}`;
+  document.querySelectorAll('.dismiss-pop.open').forEach(el => { if (el.id !== `dp-${key}`) el.classList.remove('open'); });
+  const pop = document.getElementById(`dp-${key}`);
+  if (!pop) return;
+  pop.classList.toggle('open');
+  if (pop.classList.contains('open')) {
+    const input = document.getElementById(`dp-input-${key}`);
+    input && input.focus();
+  }
+}
+
+async function confirmDismiss(jobId, type, idx) {
+  const key = `${jobId}:${type}:${idx}`;
+  const input = document.getElementById(`dp-input-${key}`);
+  const reason = input ? input.value.trim() : '';
+  if (!reason) { input && input.focus(); return; }
+
+  const b = _breakdownCache[jobId];
+  const itemText = b && (b[type + 's'] || [])[idx];
+  if (!itemText) return;
+
+  const r = await fetch(`/api/jobs/${jobId}/dismiss-item`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ item_type: type, item_text: itemText, reason }),
+  });
+  if (!r.ok) { showToast('Failed to save — please try again'); return; }
+  _markItemDismissed(jobId, type, idx, reason);
+  showToast('Noted — this will shape future scoring, not this job.');
+}
+
+function _markItemDismissed(jobId, type, idx, reason) {
+  const key = `${jobId}:${type}:${idx}`;
+  const li = document.getElementById(`si-${key}`);
+  if (!li || li.classList.contains('dismissed')) return;
+  li.classList.add('dismissed');
+  const pop = document.getElementById(`dp-${key}`);
+  if (pop) pop.classList.remove('open');
+  const btn = li.querySelector('.dismiss-x');
+  if (btn) btn.remove();
+  const note = document.createElement('span');
+  note.className = 'dismissed-note';
+  note.textContent = `Dismissed: ${reason}`;
+  li.appendChild(note);
 }
 
 function toggleDesc(jobId) {
@@ -885,3 +1162,4 @@ document.getElementById('sort').addEventListener('change', render);
 
 loadStats();
 _loadSources().then(loadJobs);
+_loadLearnedCard();

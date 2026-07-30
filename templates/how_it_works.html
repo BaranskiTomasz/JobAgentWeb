@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How it works — JobAgentWeb</title>
+<link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a href="/" class="wordmark-link"><span class="wordmark">JobAgent<span class="dot">.</span></span></a>
+    <span class="sub">Dashboard</span>
+  </div>
+  <div class="top-actions">
+    <details class="nav-menu">
+      <summary class="icon-btn" aria-label="Menu" title="Menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </summary>
+      <nav class="nav-menu-panel">
+        <a href="/">Dashboard</a>
+        <a href="/preferences">Preferences</a>
+        <a href="/how-it-works">How it works</a>
+        {% if user.is_admin %}<a href="/admin">Admin</a>{% endif %}
+        <a href="https://github.com/tobiaszbee/JobAgent" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a>
+        <a href="https://www.linkedin.com/in/baranskitomasz/" target="_blank" rel="noopener">Author <span class="ext">↗</span></a>
+        <button type="button" onclick="toggleTheme()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          Theme
+        </button>
+        <form method="post" action="/logout"><button type="submit">Logout</button></form>
+      </nav>
+    </details>
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="welcome-hero">
+    <h1>From a CV to a ranked shortlist</h1>
+    <p class="lede">
+      JobAgentWeb is only the dashboard — everything below happens in <b>JobAgent</b>,
+      running locally on the candidate's own machine, once a day or on demand.
+    </p>
+  </section>
+
+  <div class="hiw-grid">
+    <div class="panel hiw-card">
+      <div class="panel-label">01 · Getting started (once)</div>
+      <p>A PDF CV becomes a structured profile (stack, seniority, experience). A short questionnaire fills in what a CV can't: salary floor, work mode, dealbreakers. Both live locally and sync into this account's preferences (visible read-only on the <a href="/preferences">Preferences</a> page).</p>
+    </div>
+    <div class="panel hiw-card">
+      <div class="panel-label">02 · Searching, every day</div>
+      <p>JobAgent derives its own search terms from the CV and preferences and checks a dozen-plus job boards — LinkedIn for every selected country, worldwide remote boards once as "remote," and Polish boards only if Poland is selected.</p>
+    </div>
+    <div class="panel hiw-card">
+      <div class="panel-label">03 · Fast, free filtering</div>
+      <p>Before any AI reads a word: language match, banned/required keywords, and hard rules (pay floor, remote-only) get checked deterministically. Most postings never make it past this stage — for free.</p>
+    </div>
+    <div class="panel hiw-card">
+      <div class="panel-label">04 · AI scoring</div>
+      <p>Everything that survives is scored 0–10 against the candidate profile, with a breakdown: stack/seniority/company/pay sub-scores plus concrete pros and cons.</p>
+    </div>
+    <div class="panel hiw-card">
+      <div class="panel-label">05 · Listwise ranking + second opinion</div>
+      <p>The strongest candidates are ranked directly against each other (not scored in isolation), then a second, independent model reviews the shortlist specifically for dealbreakers the first pass might have missed.</p>
+    </div>
+    <div class="panel hiw-card">
+      <div class="panel-label">06 · Learning from decisions</div>
+      <p>Every apply/reject/reviewed choice made here feeds back into JobAgent: a learned preference profile (shown read-only under "What the agent learned") and calibration examples for cases where the ranking and the actual decision disagreed.</p>
+    </div>
+  </div>
+
+  <div class="calib-explain hiw-note">
+    Changing preferences, uploading a new CV, or triggering a run all happen in JobAgent locally —
+    this dashboard is for reviewing results and making apply/reject/reviewed decisions.
+  </div>
+</div>
+
+{% include "_footer.html" %}
+
+<script>
+  function toggleTheme() {
+    const root = document.documentElement;
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+    localStorage.setItem('jobagent-theme', root.getAttribute('data-theme'));
+  }
+  (function initTheme() {
+    const saved = localStorage.getItem('jobagent-theme');
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
+  })();
+  document.addEventListener('click', (e) => {
+    document.querySelectorAll('details.nav-menu[open]').forEach(menu => {
+      if (!menu.contains(e.target)) menu.removeAttribute('open');
+    });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    document.querySelectorAll('details.nav-menu[open]').forEach(menu => menu.removeAttribute('open'));
+  });
+</script>
+</body>
+</html>

@@ -7,14 +7,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
+import candidate_preferences_repo
+import jobs_repo
 import migrations
 import users_repo
 from config import SECRET_KEY, SESSION_HTTPS_ONLY
 from db import _get_pool, get_db
 from routers import (
     admin, auth, candidate_preferences, criteria, cv_profiles, dismissed_items,
-    embeddings, excluded_queries, jobs, preference_profiles, search_stats,
-    sessions, usage,
+    embeddings, evaluation, excluded_queries, jobs, preference_profiles,
+    search_stats, sessions, sources, usage,
 )
 
 _BASE_DIR = Path(__file__).parent
@@ -45,21 +47,52 @@ app.include_router(search_stats.router)
 app.include_router(sessions.router)
 app.include_router(usage.router)
 app.include_router(embeddings.router)
+app.include_router(sources.router)
+app.include_router(evaluation.router)
 app.mount("/static", StaticFiles(directory=_BASE_DIR / "static"), name="static")
 
 templates = Jinja2Templates(directory=_BASE_DIR / "templates")
 
 
-@app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, conn=Depends(get_db)):
+def _require_user(request: Request, conn) -> dict | None:
+    """Resolves the session to a user row, or None (having already issued a
+    redirect-worthy response) if not logged in / the account no longer exists."""
     user_id = request.session.get("user_id")
     if not user_id:
-        return RedirectResponse("/login", status_code=303)
+        return None
     user = users_repo.get_by_id(conn, user_id)
     if user is None:
         request.session.clear()
+        return None
+    return user
+
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard(request: Request, view: str | None = None, conn=Depends(get_db)):
+    user = _require_user(request, conn)
+    if user is None:
         return RedirectResponse("/login", status_code=303)
+    stats = jobs_repo.get_stats(conn, user["id"])
+    if stats["total"] == 0 and view != "dashboard":
+        return templates.TemplateResponse(request, "landing.html", {"user": user})
     return templates.TemplateResponse(request, "dashboard.html", {"user": user})
+
+
+@app.get("/how-it-works", response_class=HTMLResponse)
+def how_it_works(request: Request, conn=Depends(get_db)):
+    user = _require_user(request, conn)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    return templates.TemplateResponse(request, "how_it_works.html", {"user": user})
+
+
+@app.get("/preferences", response_class=HTMLResponse)
+def preferences_page(request: Request, conn=Depends(get_db)):
+    user = _require_user(request, conn)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    prefs = candidate_preferences_repo.get_active(conn, user["id"])
+    return templates.TemplateResponse(request, "preferences.html", {"user": user, "prefs": prefs})
 
 
 @app.get("/healthz")

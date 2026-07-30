@@ -506,3 +506,33 @@ h1,h2,h3 { text-wrap: balance; }
 .foot-note p { font-size: 0.82rem; color: var(--ink-faint); margin: 0 0 8px; }
 .foot-note p:last-child { margin-bottom: 0; }
 .foot-note a { color: var(--signal); text-decoration: underline; text-underline-offset: 2px; }
+
+/* Logo as link */
+.wordmark-link { text-decoration: none; color: inherit; }
+
+/* Welcome / how-it-works / preferences pages */
+.welcome-hero { max-width: 720px; margin: 48px auto 32px; text-align: left; }
+.welcome-hero h1 { font-family: var(--font-display); font-size: 2rem; font-weight: 500; margin: 0 0 14px; letter-spacing: -0.01em; }
+.welcome-hero .lede { font-size: 1rem; color: var(--ink-soft); line-height: 1.6; margin: 0 0 32px; }
+.welcome-steps { display: flex; flex-direction: column; gap: 20px; margin-bottom: 28px; }
+.w-step { display: flex; gap: 16px; align-items: flex-start; }
+.w-num {
+  flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--signal-soft); color: var(--signal);
+  font-family: var(--font-mono); font-weight: 700; font-size: 0.86rem; display: flex; align-items: center; justify-content: center;
+}
+.w-step h3 { font-size: 0.98rem; font-weight: 600; margin: 0 0 5px; }
+.w-step p { font-size: 0.88rem; color: var(--ink-soft); line-height: 1.55; margin: 0; }
+.w-step code { font-family: var(--font-mono); font-size: 0.82rem; background: var(--paper-sunk); border: 1px solid var(--line-soft); border-radius: 5px; padding: 1px 6px; }
+.welcome-cta, .welcome-skip { font-size: 0.88rem; margin: 0 0 8px; }
+.welcome-cta a, .welcome-skip a { color: var(--signal); text-decoration: none; }
+.welcome-cta a:hover, .welcome-skip a:hover { text-decoration: underline; }
+.welcome-skip a { color: var(--ink-faint); }
+
+.hiw-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 20px; }
+@media (max-width: 780px) { .hiw-grid { grid-template-columns: 1fr; } }
+.hiw-card p { font-size: 0.86rem; color: var(--ink-soft); line-height: 1.6; margin: 0; }
+.hiw-note { margin-bottom: 32px; }
+
+.pref-plain { font-size: 0.88rem; color: var(--ink); line-height: 1.6; margin: 0 0 6px; }
+.pref-plain:last-child { margin-bottom: 0; }
+.pref-plain b { color: var(--ink-soft); font-weight: 600; }

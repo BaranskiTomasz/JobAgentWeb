@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Preferences — JobAgentWeb</title>
+<link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a href="/" class="wordmark-link"><span class="wordmark">JobAgent<span class="dot">.</span></span></a>
+    <span class="sub">Dashboard</span>
+  </div>
+  <div class="top-actions">
+    <details class="nav-menu">
+      <summary class="icon-btn" aria-label="Menu" title="Menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </summary>
+      <nav class="nav-menu-panel">
+        <a href="/">Dashboard</a>
+        <a href="/preferences">Preferences</a>
+        <a href="/how-it-works">How it works</a>
+        {% if user.is_admin %}<a href="/admin">Admin</a>{% endif %}
+        <a href="https://github.com/tobiaszbee/JobAgent" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a>
+        <a href="https://www.linkedin.com/in/baranskitomasz/" target="_blank" rel="noopener">Author <span class="ext">↗</span></a>
+        <button type="button" onclick="toggleTheme()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          Theme
+        </button>
+        <form method="post" action="/logout"><button type="submit">Logout</button></form>
+      </nav>
+    </details>
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="welcome-hero">
+    <h1>Your preferences</h1>
+    <p class="lede">Read-only here — this is set from JobAgent's local questionnaire and synced into this account. To change anything, update it in JobAgent and it'll reflect here on the next sync.</p>
+  </section>
+
+  {% if not prefs %}
+    <div class="panel">
+      <p class="lc-empty">No preferences saved yet. Fill out the questionnaire in JobAgent locally to get started.</p>
+    </div>
+  {% else %}
+    <div class="summary" style="grid-template-columns: repeat(2, 1fr);">
+      <div class="panel">
+        <div class="panel-label">Work mode & location</div>
+        <p class="pref-plain">
+          {% if prefs.work_mode %}{{ prefs.work_mode | map('capitalize') | join(', ') }}{% else %}<span class="lc-empty">Not set</span>{% endif %}
+        </p>
+        {% if prefs.remote_countries %}<p class="pref-plain"><b>Remote countries:</b> {{ prefs.remote_countries | join(', ') }}</p>{% endif %}
+        {% if prefs.hybrid_cities %}<p class="pref-plain"><b>Hybrid/on-site cities:</b> {{ prefs.hybrid_cities | join(', ') }}</p>{% endif %}
+      </div>
+
+      <div class="panel">
+        <div class="panel-label">Compensation</div>
+        {% if prefs.salary_min or prefs.salary_max %}
+          <p class="pref-plain">{{ prefs.salary_min or '?' }}–{{ prefs.salary_max or '?' }} {{ prefs.salary_currency or '' }} / year</p>
+        {% else %}
+          <p class="lc-empty">Not set</p>
+        {% endif %}
+        <p class="pref-plain"><b>Show jobs without salary shown:</b> {{ 'Yes' if prefs.show_jobs_without_salary else 'No' }}</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-label">Seniority & role</div>
+        <p class="pref-plain">{% if prefs.seniority_levels %}{{ prefs.seniority_levels | join(', ') }}{% else %}<span class="lc-empty">Not set</span>{% endif %}</p>
+        {% if prefs.role_types %}<p class="pref-plain"><b>Role types:</b> {{ prefs.role_types | join(', ') }}</p>{% endif %}
+      </div>
+
+      <div class="panel">
+        <div class="panel-label">Company</div>
+        {% if prefs.preferred_company_types %}<p class="pref-plain"><b>Preferred:</b> {{ prefs.preferred_company_types | join(', ') }}</p>{% endif %}
+        {% if prefs.excluded_company_types %}<p class="pref-plain"><b>Excluded:</b> {{ prefs.excluded_company_types | join(', ') }}</p>{% endif %}
+        {% if prefs.preferred_industries %}<p class="pref-plain"><b>Preferred industries:</b> {{ prefs.preferred_industries | join(', ') }}</p>{% endif %}
+        {% if prefs.excluded_industries %}<p class="pref-plain"><b>Excluded industries:</b> {{ prefs.excluded_industries | join(', ') }}</p>{% endif %}
+        {% if not (prefs.preferred_company_types or prefs.excluded_company_types or prefs.preferred_industries or prefs.excluded_industries) %}
+          <p class="lc-empty">Not set</p>
+        {% endif %}
+      </div>
+
+      <div class="panel">
+        <div class="panel-label">Technologies</div>
+        {% if prefs.extra_tech %}<p class="pref-plain"><b>Required:</b> {{ prefs.extra_tech | join(', ') }}</p>{% endif %}
+        {% if prefs.avoided_tech %}<p class="pref-plain"><b>Avoided:</b> {{ prefs.avoided_tech | join(', ') }}</p>{% endif %}
+        {% if not (prefs.extra_tech or prefs.avoided_tech) %}<p class="lc-empty">Not set</p>{% endif %}
+      </div>
+
+      <div class="panel">
+        <div class="panel-label">Languages</div>
+        {% if prefs.languages %}
+          <p class="pref-plain">{{ prefs.languages | map(attribute='language') | join(', ') }}</p>
+        {% else %}
+          <p class="lc-empty">Not set — postings in any language pass through.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if prefs.open_notes %}
+      <div class="panel" style="margin-top:14px;">
+        <div class="panel-label">Anything else</div>
+        <p class="pref-plain">{{ prefs.open_notes }}</p>
+      </div>
+    {% endif %}
+  {% endif %}
+</div>
+
+{% include "_footer.html" %}
+
+<script>
+  function toggleTheme() {
+    const root = document.documentElement;
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+    localStorage.setItem('jobagent-theme', root.getAttribute('data-theme'));
+  }
+  (function initTheme() {
+    const saved = localStorage.getItem('jobagent-theme');
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
+  })();
+  document.addEventListener('click', (e) => {
+    document.querySelectorAll('details.nav-menu[open]').forEach(menu => {
+      if (!menu.contains(e.target)) menu.removeAttribute('open');
+    });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    document.querySelectorAll('details.nav-menu[open]').forEach(menu => menu.removeAttribute('open'));
+  });
+</script>
+</body>
+</html>
