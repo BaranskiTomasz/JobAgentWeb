@@ -536,3 +536,18 @@ h1,h2,h3 { text-wrap: balance; }
 .pref-plain { font-size: 0.88rem; color: var(--ink); line-height: 1.6; margin: 0 0 6px; }
 .pref-plain:last-child { margin-bottom: 0; }
 .pref-plain b { color: var(--ink-soft); font-weight: 600; }
+
+/* Kept last in the cascade deliberately: several rules above (.job-head,
+   .score-block, .act-group) redeclare `flex`/`margin` at identical
+   specificity, and later-in-source wins ties regardless of media-query
+   scoping — an earlier attempt at this same block got silently overridden
+   by those base rules for exactly that reason. */
+@media (max-width: 560px) {
+  /* .job-head is flex:1 next to a flex:none .score-block — on narrow screens
+     the score block's fixed-width contents (badges + 96px meter) leave the
+     title almost no room, wrapping it one word per line. Stack instead. */
+  .job-top { flex-wrap: wrap; }
+  .job-head { flex: 1 1 100%; }
+  .score-block { flex: 1 1 100%; flex-wrap: wrap; justify-content: space-between; }
+  .act-group { margin-left: 0; width: 100%; justify-content: space-between; }
+}
