@@ -1,0 +1,149 @@
+def _create(client, **overrides):
+    body = {
+        "title": "Backend Engineer", "company": "Acme", "location": "Remote",
+        "url": "https://example.com/jobs/1", "source": "linkedin", "description": "Build things.",
+        "search_query": "backend engineer",
+    }
+    body.update(overrides)
+    return client.post("/api/jobs", json=body).json()
+
+
+def test_get_all_urls_is_system_wide(logged_in_client, other_logged_in_client):
+    _create(logged_in_client, url="https://example.com/jobs/a")
+    _create(other_logged_in_client, url="https://example.com/jobs/b")
+    urls = logged_in_client.get("/api/jobs/urls").json()["urls"]
+    assert set(urls) == {"https://example.com/jobs/a", "https://example.com/jobs/b"}
+
+
+def test_missing_descriptions(logged_in_client):
+    job_id = _create(logged_in_client, description=None)["job_id"]
+    missing = logged_in_client.get("/api/jobs/missing-descriptions").json()
+    assert len(missing) == 1
+    assert missing[0]["id"] == job_id
+
+    logged_in_client.patch(f"/api/jobs/{job_id}/description", json={"description": "Now has one."})
+    assert logged_in_client.get("/api/jobs/missing-descriptions").json() == []
+    assert logged_in_client.get(f"/api/jobs/{job_id}").json()["description"] == "Now has one."
+
+
+def test_update_description_is_shared(logged_in_client, other_logged_in_client):
+    job_id = _create(logged_in_client, description=None)["job_id"]
+    other_logged_in_client.post("/api/jobs", json={
+        "title": "Backend Engineer", "company": "Acme", "location": "Remote",
+        "url": "https://example.com/jobs/1", "source": "linkedin",
+    })
+    logged_in_client.patch(f"/api/jobs/{job_id}/description", json={"description": "Shared text."})
+    theirs = other_logged_in_client.get(f"/api/jobs/{job_id}").json()
+    assert theirs["description"] == "Shared text."
+
+
+def test_update_score_and_status(logged_in_client):
+    job_id = _create(logged_in_client)["job_id"]
+    resp = logged_in_client.patch(f"/api/jobs/{job_id}/score-and-status", json={
+        "score": 0.0, "reason": "listing gone", "status": "auto_rejected",
+    })
+    body = resp.json()
+    assert body["score"] == 0.0
+    assert body["status"] == "auto_rejected"
+
+
+def test_get_new_unscored_new_with_descriptions(logged_in_client):
+    with_desc = _create(logged_in_client, url="https://example.com/jobs/a")["job_id"]
+    no_desc = _create(logged_in_client, url="https://example.com/jobs/b", description=None)["job_id"]
+
+    new_ids = {j["id"] for j in logged_in_client.get("/api/jobs/new").json()}
+    assert new_ids == {with_desc, no_desc}
+
+    unscored_ids = {j["id"] for j in logged_in_client.get("/api/jobs/unscored").json()}
+    assert unscored_ids == {with_desc}
+
+    with_desc_ids = {j["id"] for j in logged_in_client.get("/api/jobs/new-with-descriptions").json()}
+    assert with_desc_ids == {with_desc}
+
+
+def test_for_ranking(logged_in_client):
+    job_id = _create(logged_in_client)["job_id"]
+    rows = logged_in_client.get("/api/jobs/for-ranking").json()
+    assert [r["id"] for r in rows] == [job_id]
+
+
+def test_examples_and_feedback(logged_in_client):
+    applied_id = _create(logged_in_client, url="https://example.com/jobs/a")["job_id"]
+    rejected_id = _create(logged_in_client, url="https://example.com/jobs/b")["job_id"]
+    logged_in_client.patch(f"/api/jobs/{applied_id}/status", json={"status": "applied"})
+    logged_in_client.patch(f"/api/jobs/{rejected_id}/status", json={"status": "rejected", "rejection_reason": "nope"})
+
+    examples = logged_in_client.get("/api/jobs/examples").json()
+    assert [j["id"] for j in examples["positive"]] == [applied_id]
+    assert [j["id"] for j in examples["negative"]] == [rejected_id]
+
+    feedback = logged_in_client.get("/api/jobs/feedback").json()
+    assert len(feedback["applied"]) == 1
+    assert len(feedback["rejected"]) == 1
+
+    assert logged_in_client.get("/api/jobs/applied-ids").json()["ids"] == [applied_id]
+    assert logged_in_client.get("/api/jobs/rejected-ids").json()["ids"] == [rejected_id]
+    assert logged_in_client.get("/api/jobs/decisions-count").json()["count"] == 2
+
+
+def test_query_outcome_stats(logged_in_client):
+    job_id = _create(logged_in_client, search_query="python dev")["job_id"]
+    logged_in_client.patch(f"/api/jobs/{job_id}/status", json={"status": "applied"})
+    stats = logged_in_client.get("/api/jobs/query-outcome-stats", params={"source": "linkedin"}).json()
+    assert len(stats) == 1
+    assert stats[0]["search_query"] == "python dev"
+    assert stats[0]["applied_total"] == 1
+
+
+def test_count_and_delete_by_filter_only_affects_this_user(logged_in_client, other_logged_in_client):
+    mine = _create(logged_in_client, url="https://example.com/jobs/a")["job_id"]
+    logged_in_client.patch(f"/api/jobs/{mine}/status", json={"status": "auto_rejected"})
+    other_logged_in_client.post("/api/jobs", json={
+        "title": "Backend Engineer", "company": "Acme", "location": "Remote",
+        "url": "https://example.com/jobs/a", "source": "linkedin",
+    })
+
+    count = logged_in_client.get("/api/jobs/count", params={"status": ["auto_rejected"]}).json()["count"]
+    assert count == 1
+
+    deleted = logged_in_client.delete("/api/jobs", params={"status": ["auto_rejected"]}).json()["deleted"]
+    assert deleted == 1
+
+    # Removed from my view...
+    assert logged_in_client.get("/api/jobs").json() == []
+    # ...but the shared posting (and the other user's link to it) survives.
+    theirs = other_logged_in_client.get(f"/api/jobs/{mine}").json()
+    assert theirs["status"] == "new"
+
+
+def test_requires_login(client):
+    assert client.get("/api/jobs/new").status_code == 401
+    assert client.get("/api/jobs/urls").status_code == 401
+
+
+def test_ranked_and_ranked_count(logged_in_client):
+    top = _create(logged_in_client, url="https://example.com/jobs/a")["job_id"]
+    other = _create(logged_in_client, url="https://example.com/jobs/b")["job_id"]
+    logged_in_client.patch(f"/api/jobs/{top}/ranking", json={"listwise_rank": 1})
+    logged_in_client.patch(f"/api/jobs/{other}/ranking", json={"listwise_rank": 5})
+    logged_in_client.patch(f"/api/jobs/{top}/status", json={"status": "applied"})
+    logged_in_client.patch(f"/api/jobs/{other}/status", json={"status": "rejected"})
+
+    ranked = logged_in_client.get("/api/jobs/ranked", params={"status": ["applied", "rejected"]}).json()
+    assert [j["id"] for j in ranked] == [top, other]
+    assert logged_in_client.get("/api/jobs/ranked-count").json()["count"] == 2
+
+
+def test_reset_auto_rejected(logged_in_client, other_logged_in_client):
+    with_desc = _create(logged_in_client, url="https://example.com/jobs/a")["job_id"]
+    no_desc = _create(logged_in_client, url="https://example.com/jobs/b", description=None)["job_id"]
+    for jid in (with_desc, no_desc):
+        logged_in_client.patch(f"/api/jobs/{jid}/score-and-status", json={
+            "score": 0.0, "reason": "bad", "status": "auto_rejected",
+        })
+
+    resp = logged_in_client.post("/api/jobs/reset-auto-rejected")
+    assert resp.json()["reset"] == 1  # only the one with a description
+
+    assert logged_in_client.get(f"/api/jobs/{with_desc}").json()["status"] == "new"
+    assert logged_in_client.get(f"/api/jobs/{no_desc}").json()["status"] == "auto_rejected"

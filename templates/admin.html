@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JobAgentWeb — Admin</title>
+<link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="wordmark">JobAgent<span class="dot">.</span></span>
+    <span class="sub">Admin</span>
+  </div>
+  <div class="top-actions">
+    <a class="btn-ghost" href="/">Back to dashboard</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="panel" style="margin-top: 20px;">
+    <div class="panel-label">Users ({{ users|length }})</div>
+    <table class="div-tbl" style="width:100%; margin-top: 10px;">
+      <thead><tr><th>Username</th><th>Admin</th><th>Created</th><th></th></tr></thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.username }}</td>
+          <td>{{ "yes" if u.is_admin else "" }}</td>
+          <td>{{ u.created_at }}</td>
+          <td>
+            {% if u.id != current_user_id %}
+            <form method="post" action="/admin/users/{{ u.id }}/delete" onsubmit="return confirm('Delete user {{ u.username }} and all their data? This cannot be undone.');">
+              <button type="submit" class="btn-ghost">Delete</button>
+            </form>
+            {% else %}
+            <span class="cap">(you)</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</body>
+</html>

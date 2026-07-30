@@ -1,0 +1,26 @@
+.auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+
+.auth-card { width: 100%; max-width: 420px; }
+
+.auth-intro { text-align: center; margin-bottom: 22px; }
+.auth-intro .wordmark { font-family: var(--font-display); font-size: 1.6rem; }
+.auth-intro p { color: var(--ink-soft); font-size: 0.88rem; margin: 10px 0 0; line-height: 1.5; }
+
+.auth-field { margin-bottom: 14px; }
+.auth-field label { display: block; font-size: 0.78rem; color: var(--ink-soft); margin-bottom: 5px; }
+.auth-field input {
+  width: 100%; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--line);
+  background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 0.9rem;
+}
+.auth-field input:focus { outline: none; border-color: var(--signal); }
+
+.auth-error {
+  background: color-mix(in srgb, #c0392b 15%, transparent); border: 1px solid color-mix(in srgb, #c0392b 40%, transparent);
+  color: #c0392b; border-radius: 9px; padding: 9px 12px; font-size: 0.84rem; margin-bottom: 14px;
+}
+
+.auth-submit { width: 100%; justify-content: center; margin-top: 4px; }
+
+.auth-switch { text-align: center; margin-top: 16px; font-size: 0.85rem; color: var(--ink-soft); }
+.auth-switch a { color: var(--signal); text-decoration: none; }
+.auth-switch a:hover { text-decoration: underline; }

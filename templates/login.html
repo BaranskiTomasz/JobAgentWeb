@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JobAgentWeb — Log in</title>
+<link rel="stylesheet" href="/static/dashboard.css">
+<link rel="stylesheet" href="/static/auth.css">
+</head>
+<body>
+
+<div class="auth-wrap">
+  <div class="auth-card panel">
+    <div class="auth-intro">
+      <div class="wordmark">JobAgent<span class="dot">.</span></div>
+      <p>
+        JobAgent scrapes job postings, scores and ranks them against your CV and
+        preferences using AI, and learns from what you apply to and reject.
+        JobAgentWeb is where you review your results — browse your jobs and
+        update their status, from anywhere.
+      </p>
+    </div>
+
+    {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
+
+    <form method="post" action="/login">
+      <div class="auth-field">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" required autofocus autocomplete="username">
+      </div>
+      <div class="auth-field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn-primary auth-submit">Log in</button>
+    </form>
+
+    <div class="auth-switch">No account yet? <a href="/register">Register</a></div>
+  </div>
+</div>
+
+</body>
+</html>
