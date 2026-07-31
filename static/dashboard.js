@@ -342,7 +342,9 @@ async function openEvalModal() {
       <div class="eval-metric"><div class="ev">${data.total_ranked ?? '—'}</div><div class="el">RANKED</div></div>
       <div class="eval-metric"><div class="ev">${cases.length}</div><div class="el">DIVERGENCES</div></div>
     </div>
-    <p class="calib-explain"><b>Precision@K</b> looks at the top-K AI-ranked jobs you've since made a decision on, and asks: how many were good calls? A <b>divergence case</b> is either a job ranked in the top 5 that you rejected (the model overrated it), or a job ranked #16+ that you applied to anyway (the model underrated it).</p>
+    <p class="calib-explain"><b>Precision@K</b> looks at your top-K AI-ranked jobs that you've actually <i>decided</i> on (applied, rejected, or auto-rejected) — not the top-K overall, since only a decided job can confirm whether the ranking was right. "Reviewed" doesn't count as a decision here: it means you looked but haven't committed either way, so it's left out of the count and the score entirely.
+    <br><br><b>Example:</b> your 10 highest-ranked jobs include 8 you've decided on — 6 applied, 2 rejected — and 2 still sitting as new/reviewed. Precision@10 = 6/8 = <b>75%</b>. The 2 undecided ones simply aren't counted yet; they'll factor in once you act on them.
+    <br><br>A <b>divergence case</b> flags a specific miss: a job ranked in the top 5 that you rejected (the model overrated it), or ranked #16+ that you applied to anyway (the model underrated it). These are the same cases JobAgent feeds back into its own scoring as calibration examples, so the model doesn't repeat the same mistake.</p>
 
     <div class="wa-gate ${waMeetsGate ? 'met' : ''}">
       <div class="wa-gate-hd">

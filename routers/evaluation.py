@@ -12,10 +12,13 @@ WOULD_APPLY_SCORE_FLOOR = 7.0
 
 
 def _precision_at_k(conn, user_id: int, k: int) -> dict:
-    rows = jobs_repo.get_ranked(conn, user_id, ["applied", "reviewed", "rejected", "auto_rejected"])[:k]
+    """"reviewed" means read-but-undecided (see the dashboard's own status meaning),
+    not a decision — counting it as a positive would credit the ranking for jobs the
+    user never actually validated, so it's excluded entirely, same as divergence_cases."""
+    rows = jobs_repo.get_ranked(conn, user_id, ["applied", "rejected", "auto_rejected"])[:k]
     if not rows:
         return {"precision_at_k": None, "n_evaluated": 0}
-    positive = sum(1 for r in rows if r["status"] in ("applied", "reviewed"))
+    positive = sum(1 for r in rows if r["status"] == "applied")
     return {"precision_at_k": round(positive / len(rows), 3), "n_evaluated": len(rows)}
 
 
