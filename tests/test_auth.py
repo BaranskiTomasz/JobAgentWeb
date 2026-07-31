@@ -1,6 +1,7 @@
 def test_register_creates_user_and_logs_in(client):
     resp = client.post("/register", data={
         "username": "newperson", "password": "goodpassword", "password_confirm": "goodpassword",
+        "invite_code": "test-invite-code",
     })
     assert resp.status_code in (200, 303)
 
@@ -8,9 +9,38 @@ def test_register_creates_user_and_logs_in(client):
     assert api_resp.status_code == 200
 
 
+def test_register_wrong_invite_code_rejected(client):
+    resp = client.post("/register", data={
+        "username": "newperson", "password": "goodpassword", "password_confirm": "goodpassword",
+        "invite_code": "not-the-real-code",
+    })
+    assert resp.status_code == 400
+    assert "Invalid invite code" in resp.text
+    assert client.get("/api/jobs/stats").status_code == 401
+
+
+def test_register_missing_invite_code_rejected(client):
+    resp = client.post("/register", data={
+        "username": "newperson", "password": "goodpassword", "password_confirm": "goodpassword",
+    })
+    assert resp.status_code == 400
+    assert "Invalid invite code" in resp.text
+
+
+def test_register_no_invite_code_configured_closes_registration(client, monkeypatch):
+    monkeypatch.setattr("routers.auth.INVITE_CODE", None)
+    resp = client.post("/register", data={
+        "username": "newperson", "password": "goodpassword", "password_confirm": "goodpassword",
+        "invite_code": "test-invite-code",
+    })
+    assert resp.status_code == 400
+    assert "Registration is currently closed" in resp.text
+
+
 def test_register_password_mismatch_rejected(client):
     resp = client.post("/register", data={
         "username": "newperson", "password": "goodpassword", "password_confirm": "different",
+        "invite_code": "test-invite-code",
     })
     assert resp.status_code == 400
     assert "do not match" in resp.text
@@ -21,6 +51,7 @@ def test_register_password_mismatch_rejected(client):
 def test_register_short_password_rejected(client):
     resp = client.post("/register", data={
         "username": "newperson", "password": "short", "password_confirm": "short",
+        "invite_code": "test-invite-code",
     })
     assert resp.status_code == 400
     assert "at least 8 characters" in resp.text
@@ -29,6 +60,7 @@ def test_register_short_password_rejected(client):
 def test_register_short_username_rejected(client):
     resp = client.post("/register", data={
         "username": "ab", "password": "goodpassword", "password_confirm": "goodpassword",
+        "invite_code": "test-invite-code",
     })
     assert resp.status_code == 400
     assert "at least 3 characters" in resp.text
@@ -37,6 +69,7 @@ def test_register_short_username_rejected(client):
 def test_register_duplicate_username_rejected(client, user):
     resp = client.post("/register", data={
         "username": user["username"], "password": "anotherpassword", "password_confirm": "anotherpassword",
+        "invite_code": "test-invite-code",
     })
     assert resp.status_code == 400
     assert "already taken" in resp.text

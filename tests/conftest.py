@@ -14,6 +14,7 @@ os.environ.setdefault("POSTGRES_PASSWORD", "test_only_pw_923nf")
 # silently breaking every login-dependent test. Production always keeps the
 # default (true), since the site is genuinely served over HTTPS there.
 os.environ.setdefault("SESSION_HTTPS_ONLY", "false")
+os.environ.setdefault("INVITE_CODE", "test-invite-code")
 
 import pytest
 from fastapi.testclient import TestClient

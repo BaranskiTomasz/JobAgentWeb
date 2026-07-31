@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 import users_repo
+from config import INVITE_CODE
 from db import get_db
 from security import hash_password, verify_password
 
@@ -43,11 +44,16 @@ def register_submit(
     username: str = Form(...),
     password: str = Form(...),
     password_confirm: str = Form(...),
+    invite_code: str = Form(""),
     conn=Depends(get_db),
 ):
     username = username.strip()
     error = None
-    if len(username) < 3:
+    if not INVITE_CODE:
+        error = "Registration is currently closed."
+    elif invite_code.strip() != INVITE_CODE:
+        error = "Invalid invite code."
+    elif len(username) < 3:
         error = "Username must be at least 3 characters."
     elif len(password) < 8:
         error = "Password must be at least 8 characters."
