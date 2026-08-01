@@ -55,7 +55,8 @@ _SCHEMA = """
         UNIQUE(user_id, job_id)
     );
 
-    CREATE INDEX IF NOT EXISTS idx_user_job_states_user ON user_job_states(user_id);
+    DROP INDEX IF EXISTS idx_user_job_states_user;
+    CREATE INDEX IF NOT EXISTS idx_user_job_states_user_status ON user_job_states(user_id, status);
 
     CREATE TABLE IF NOT EXISTS criteria (
         id         INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -106,6 +107,8 @@ _SCHEMA = """
         output_tokens INTEGER DEFAULT 0,
         cost_usd      REAL DEFAULT 0.0
     );
+
+    CREATE INDEX IF NOT EXISTS idx_usage_log_user_created ON usage_log(user_id, created_at);
 
     CREATE TABLE IF NOT EXISTS cost_summaries (
         id               INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

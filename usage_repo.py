@@ -18,7 +18,7 @@ def get_summary(conn, user_id: int) -> dict:
     cur = dict_cursor(conn)
     cur.execute(
         "SELECT COALESCE(SUM(cost_usd),0) AS cost, COALESCE(SUM(input_tokens+output_tokens),0) AS tokens "
-        "FROM usage_log WHERE user_id = %s AND created_at::date = CURRENT_DATE",
+        "FROM usage_log WHERE user_id = %s AND created_at >= CURRENT_DATE AND created_at < CURRENT_DATE + INTERVAL '1 day'",
         (user_id,),
     )
     today = cur.fetchone()
