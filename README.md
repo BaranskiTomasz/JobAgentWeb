@@ -54,9 +54,10 @@ POSTGRES_PASSWORD=...
 
 SECRET_KEY=...              # required in production — signs the session cookie
 SESSION_HTTPS_ONLY=true     # set to false only for local dev over plain http://127.0.0.1
+INVITE_CODE=...             # required for /register to accept anyone at all
 ```
 
-`SECRET_KEY` has an insecure dev-only default (`dev-only-insecure-secret-key-change-in-production`) — **must** be overridden with a real random value in any environment reachable by anyone but you, or session cookies are forgeable. `SESSION_HTTPS_ONLY` defaults on; a `Secure`-flagged cookie is never sent back over plain HTTP, so local dev against `http://127.0.0.1` needs it set to `false` or every login-dependent request silently breaks.
+`SECRET_KEY` has an insecure dev-only default (`dev-only-insecure-secret-key-change-in-production`) — **must** be overridden with a real random value in any environment reachable by anyone but you, or session cookies are forgeable. `SESSION_HTTPS_ONLY` defaults on; a `Secure`-flagged cookie is never sent back over plain HTTP, so local dev against `http://127.0.0.1` needs it set to `false` or every login-dependent request silently breaks. `INVITE_CODE` has no default at all — leaving it unset is what keeps `/register` closed (see [Auth](#auth)), so set it deliberately, not because the app demands a value to boot.
 
 ### Run
 
@@ -84,9 +85,11 @@ All JSON endpoints live under `/api/*` and require a session cookie (`deps.get_c
 | `candidate_preferences` | `/api/candidate-preferences` | Questionnaire answers |
 | `excluded_queries` | `/api/excluded-search-queries` | Auto-pruned search queries |
 | `search_stats` | `/api/search-stats` | Per-query collection outcome tracking |
-| `sessions` | `/api/sessions` | Pipeline run tracking (start/finish/cancel/latest) |
+| `sessions` | `/api/sessions` | Pipeline run tracking (start/finish/cancel/latest), one active run per user |
 | `usage` | `/api/usage` | Token/cost logging and per-run summaries |
 | `embeddings` | `/api/embeddings` | Shared vector storage + retrieval |
+| `evaluation` | `/api/eval` | Precision@K, divergence cases, would-apply precision — JobAgent proxies this rather than recomputing it |
+| `sources` | `/api/sources` | Distinct job sources for *this user's* pool, for the dashboard's source filter dropdown |
 
 Every per-user router scopes its queries by `user_id` from the session — there is no endpoint that returns another user's `user_job_states`-backed data. `job_postings`/`job_embeddings` reads are shared by design (any authenticated user can see the same posting), never keyed by ownership.
 
@@ -94,12 +97,12 @@ Every per-user router scopes its queries by `user_id` from the session — there
 
 ## Deployment
 
-The reference deployment runs on a single VPS: this app under `uvicorn`/`gunicorn`, Postgres locally, and Caddy in front for TLS. Two details matter beyond the basics:
+The reference deployment runs on a single VPS: this app under `uvicorn` (systemd unit `jobagentweb.service`), Postgres locally, and Caddy in front for TLS. Two details matter beyond the basics:
 
-- **Caddy's `basic_auth` blocks API traffic identically to browser traffic** — it has no notion of "let API calls through." While registration is meant to stay private/invite-only, `basic_auth` in front of the whole site is a simple way to gate it, but it also means JobAgent (the API client) can't reach this host over the public URL either. The current setup routes JobAgent's traffic over a private WireGuard tunnel straight to this host instead, bypassing Caddy and its `basic_auth` entirely for API calls.
+- **Caddy only reverse-proxies — it doesn't gate access itself.** There's no `basic_auth` in front of the site; this app's own per-user session login (plus invite-only registration) is the access control. Caddy adds `X-Robots-Tag: noindex` and a disallow-everything `robots.txt` to keep the instance out of search indexes, nothing more. JobAgent (the API client) still reaches this host over a private WireGuard tunnel rather than the public domain, but that's a network-topology choice, not a workaround for a proxy-level auth wall.
 - **Firewall**: if Postgres and this app are reachable over a tunnel interface (e.g. WireGuard's `wg0`), scope firewall rules to that interface specifically, not open to `0.0.0.0` — this app has no additional network-layer access control beyond the OS-level firewall.
 
-There is a `deploy/jobagentweb.service` file in the JobAgent repo (this app predates being split into its own repo, and deployment assets were never moved) — **it's stale**: it references `web.app:app` and `db.migrations.init_db()`, which are JobAgent's old module paths from before this split, not this app's current `main:app` / `migrations.init_db(conn)`. Don't use it as-is; write a fresh systemd unit (or equivalent) pointing at `main:app` under `uvicorn`/`gunicorn -k uvicorn.workers.UvicornWorker` in this repo's own venv, with `ExecStartPre` unnecessary since `lifespan` already runs migrations on every start.
+Provisioning scripts (`bootstrap.sh`, `postgres_setup.sql`, `Caddyfile`, `jobagentweb.service`, `.env` example, WireGuard configs) live in the **JobAgent** repo's `deploy/` directory, not here — this app predates the split into its own repo, and deployment assets were never moved over. Follow that repo's `deploy/bootstrap.sh` for a fresh VPS setup; it clones this repo (`JobAgentWeb.git`) to `/opt/jobagentweb` and installs the matching systemd unit.
 
 Opening registration to the public beyond the current private/invite-only setup — and how (open vs. invite codes) — is a deliberate decision to make explicitly when the time comes, not a default to fall into.
 
