@@ -77,3 +77,42 @@ def test_decision_vectors_scoped_per_user(logged_in_client, other_logged_in_clie
 
 def test_requires_login(client):
     assert client.get("/api/embeddings/ids").status_code == 401
+
+
+def test_similarity_computed_server_side(logged_in_client):
+    # Regression: the old flow shipped raw vectors over HTTP for the caller to
+    # score itself — a 1024-dim vector is ~22 KB of JSON, tens of MB at a
+    # couple thousand jobs. /similarity returns only the reduced {job_id: score}.
+    identical = _create(logged_in_client, url="https://example.com/jobs/sim-identical")
+    orthogonal = _create(logged_in_client, url="https://example.com/jobs/sim-orthogonal")
+    opposite = _create(logged_in_client, url="https://example.com/jobs/sim-opposite")
+    logged_in_client.post("/api/embeddings", json={"items": [
+        {"job_id": identical, "embedding": [1.0, 0.0], "model": "voyage-3-large"},
+        {"job_id": orthogonal, "embedding": [0.0, 1.0], "model": "voyage-3-large"},
+        {"job_id": opposite, "embedding": [-1.0, 0.0], "model": "voyage-3-large"},
+    ]})
+
+    resp = logged_in_client.post("/api/embeddings/similarity", json={
+        "ideal": [1.0, 0.0], "job_ids": [identical, orthogonal, opposite],
+    })
+    assert resp.status_code == 200
+    scores = resp.json()
+    assert scores[identical] == 1.0
+    assert scores[orthogonal] == 0.0
+    assert scores[opposite] == -1.0
+    # The point of the endpoint: raw vectors never come back, only scores.
+    assert "embedding" not in resp.text and "1024" not in resp.text
+
+
+def test_similarity_empty_job_ids_returns_empty(logged_in_client):
+    resp = logged_in_client.post("/api/embeddings/similarity", json={"ideal": [1.0, 0.0], "job_ids": []})
+    assert resp.json() == {}
+
+
+def test_similarity_zero_vector_scores_zero_not_nan(logged_in_client):
+    job_id = _create(logged_in_client, url="https://example.com/jobs/sim-zero")
+    logged_in_client.post("/api/embeddings", json={
+        "items": [{"job_id": job_id, "embedding": [0.0, 0.0], "model": "voyage-3-large"}],
+    })
+    resp = logged_in_client.post("/api/embeddings/similarity", json={"ideal": [1.0, 0.0], "job_ids": [job_id]})
+    assert resp.json()[job_id] == 0.0

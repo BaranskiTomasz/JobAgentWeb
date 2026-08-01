@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 import embeddings_repo
 from db import get_db
 from deps import get_current_user
-from models import EmbeddingBatchUpsert, EmbeddingVectorsRequest
+from models import EmbeddingBatchUpsert, EmbeddingSimilarityRequest, EmbeddingVectorsRequest
 
 router = APIRouter(prefix="/api/embeddings", tags=["embeddings"])
 
@@ -32,6 +32,11 @@ def upsert(body: EmbeddingBatchUpsert, user: dict = Depends(get_current_user), c
 @router.post("/vectors")
 def vectors(body: EmbeddingVectorsRequest, user: dict = Depends(get_current_user), conn=Depends(get_db)):
     return embeddings_repo.get_vectors(conn, body.job_ids)
+
+
+@router.post("/similarity")
+def similarity(body: EmbeddingSimilarityRequest, user: dict = Depends(get_current_user), conn=Depends(get_db)):
+    return embeddings_repo.score_by_similarity(conn, body.ideal, body.job_ids)
 
 
 @router.get("/decision-vectors")

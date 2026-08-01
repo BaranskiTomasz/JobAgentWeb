@@ -227,3 +227,8 @@ class EmbeddingBatchUpsert(BaseModel):
 
 class EmbeddingVectorsRequest(BaseModel):
     job_ids: list[str]
+
+
+class EmbeddingSimilarityRequest(BaseModel):
+    ideal: list[float]
+    job_ids: list[str]
