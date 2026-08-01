@@ -1,8 +1,27 @@
 from db import dict_cursor
 
+# Arbitrary namespace for pg_advisory_xact_lock's two-arg form, so this lock
+# class can never collide with an unrelated advisory lock added later.
+_SESSION_LOCK_NAMESPACE = 8711
+
+
+class SessionAlreadyActiveError(Exception):
+    """Raised by start() when the user already has a running session. The only
+    guard against two concurrent runs used to be _RunGuard, an in-process flag
+    in JobAgent's Flask dashboard — it did nothing for a run launched directly
+    from a terminal (collector/runner.py's run() called session_repository.start()
+    unconditionally), which is exactly how two collectors ended up racing on the
+    same user's data in production."""
+
 
 def start(conn, user_id: int) -> int:
     cur = conn.cursor()
+    # Held for this transaction only (released on commit/rollback when the
+    # request ends), not for the run's duration — just enough to make the
+    # check-then-insert below atomic against another concurrent start().
+    cur.execute("SELECT pg_advisory_xact_lock(%s, %s)", (_SESSION_LOCK_NAMESPACE, user_id))
+    if has_active_run(conn, user_id):
+        raise SessionAlreadyActiveError()
     cur.execute("INSERT INTO sessions (user_id, status) VALUES (%s, 'running') RETURNING id", (user_id,))
     return cur.fetchone()[0]
 

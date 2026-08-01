@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 import sessions_repo
 from db import get_db
@@ -10,7 +10,14 @@ router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
 @router.post("")
 def start(user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    session_id = sessions_repo.start(conn, user["id"])
+    try:
+        session_id = sessions_repo.start(conn, user["id"])
+    except sessions_repo.SessionAlreadyActiveError:
+        raise HTTPException(
+            status_code=409,
+            detail="A run is already active for this account. If this is stale "
+                   "(e.g. a crashed process), cancel it first: POST /api/sessions/cancel-active.",
+        )
     return {"id": session_id}
 
 

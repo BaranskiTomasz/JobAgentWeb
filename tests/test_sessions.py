@@ -1,4 +1,8 @@
+import threading
 from datetime import datetime, timedelta
+
+import db as db_module
+import sessions_repo
 
 
 def test_start_and_finish(logged_in_client):
@@ -62,8 +66,6 @@ def test_finish_writes_utc_regardless_of_session_timezone(user, db_conn):
     # against its own datetime.utcnow() with no timezone conversion. If finished_at
     # followed this Postgres session/server's `timezone` GUC instead of always being
     # UTC, that comparison would silently skew on any host not configured to UTC.
-    import sessions_repo
-
     cur = db_conn.cursor()
     cur.execute("SET timezone = 'America/New_York'")
     cur.execute("INSERT INTO sessions (user_id, status) VALUES (%s, 'running') RETURNING id", (user["id"],))
@@ -74,3 +76,51 @@ def test_finish_writes_utc_regardless_of_session_timezone(user, db_conn):
 
     finished_at = sessions_repo.get_last_finished_at(db_conn, user["id"])
     assert abs((finished_at - datetime.utcnow()).total_seconds()) < 5
+
+
+def test_second_concurrent_start_is_rejected(user):
+    # Regression: the only guard against two concurrent runs used to be
+    # _RunGuard, an in-process flag in JobAgent's Flask dashboard — it did
+    # nothing for a run launched directly from a terminal, since
+    # collector/runner.py's run() called session_repository.start()
+    # unconditionally with no check first. That's exactly how two collectors
+    # ended up racing on the same user's data in production. start() now
+    # atomically checks-and-inserts under a pg_advisory_xact_lock, so this
+    # must hold even under a genuine simultaneous race, not just sequentially.
+    results = {}
+    errors = {}
+    barrier = threading.Barrier(2)
+
+    def _start(key):
+        conn = db_module._get_pool().getconn()
+        try:
+            barrier.wait(timeout=5)
+            results[key] = sessions_repo.start(conn, user["id"])
+            conn.commit()
+        except sessions_repo.SessionAlreadyActiveError as e:
+            conn.rollback()
+            errors[key] = e
+        finally:
+            db_module._get_pool().putconn(conn)
+
+    t1 = threading.Thread(target=_start, args=("a",))
+    t2 = threading.Thread(target=_start, args=("b",))
+    t1.start(); t2.start()
+    t1.join(); t2.join()
+
+    assert len(results) == 1
+    assert len(errors) == 1
+
+
+def test_start_rejected_while_run_active(logged_in_client):
+    logged_in_client.post("/api/sessions")
+    resp = logged_in_client.post("/api/sessions")
+    assert resp.status_code == 409
+    assert "cancel-active" in resp.json()["detail"]
+
+
+def test_start_allowed_again_after_cancel_active(logged_in_client):
+    logged_in_client.post("/api/sessions")
+    logged_in_client.post("/api/sessions/cancel-active")
+    resp = logged_in_client.post("/api/sessions")
+    assert resp.status_code == 200
