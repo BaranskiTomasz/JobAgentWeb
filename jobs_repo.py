@@ -1,6 +1,8 @@
 import hashlib
 import json
 
+from psycopg2.extras import execute_values
+
 from db import dict_cursor
 
 # Explicit aliases: both tables have an `id` column, and `jp.*, ujs.*` would let one clobber the other.
@@ -161,6 +163,55 @@ def update_would_apply(conn, user_id: int, job_id: str, would_apply: bool, reaso
         " WHERE user_id = %s AND job_id = %s",
         (1 if would_apply else 0, reason, user_id, job_id),
     )
+
+
+def update_ranking_scores_batch(conn, user_id: int, items: list[dict]) -> int:
+    """One round-trip for the whole batch instead of one PATCH per job — rank_jobs.py
+    writes back a score for every job in the active pool on every run (hundreds of
+    rows), which used to mean that many separate SELECT+UPDATE+SELECT round-trips.
+    Rows for job_ids this user has no state for simply match nothing (same
+    authorization shape as the single-job endpoint's per-row user_id scoping, just
+    without a 404 for a mismatch — a batch silently skipping an unknown id is the
+    right behavior here, not an error for the whole batch)."""
+    if not items:
+        return 0
+    cur = conn.cursor()
+    rows = [
+        (user_id, item["job_id"], item.get("embedding_score"), item.get("rerank_score"),
+         item.get("listwise_rank"), item.get("rank_reason"), item.get("debate_flag"), item.get("debate_note"))
+        for item in items
+    ]
+    execute_values(
+        cur,
+        """UPDATE user_job_states AS ujs
+           SET embedding_score = v.embedding_score::real,
+               rerank_score = v.rerank_score::real,
+               listwise_rank = v.listwise_rank::integer,
+               rank_reason = v.rank_reason::text,
+               debate_flag = v.debate_flag::text,
+               debate_note = v.debate_note::text,
+               updated_at = CURRENT_TIMESTAMP
+           FROM (VALUES %s) AS v(user_id, job_id, embedding_score, rerank_score, listwise_rank, rank_reason, debate_flag, debate_note)
+           WHERE ujs.user_id = v.user_id::integer AND ujs.job_id = v.job_id::text""",
+        rows,
+    )
+    return cur.rowcount
+
+
+def update_would_apply_batch(conn, user_id: int, items: list[dict]) -> int:
+    if not items:
+        return 0
+    cur = conn.cursor()
+    rows = [(user_id, item["job_id"], 1 if item["would_apply"] else 0, item["reason"]) for item in items]
+    execute_values(
+        cur,
+        """UPDATE user_job_states AS ujs
+           SET would_apply = v.would_apply::integer, would_apply_reason = v.reason::text, updated_at = CURRENT_TIMESTAMP
+           FROM (VALUES %s) AS v(user_id, job_id, would_apply, reason)
+           WHERE ujs.user_id = v.user_id::integer AND ujs.job_id = v.job_id::text""",
+        rows,
+    )
+    return cur.rowcount
 
 
 def update_structured_data(conn, job_id: str, data: dict) -> None:

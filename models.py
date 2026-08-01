@@ -67,6 +67,14 @@ class JobRankingUpdate(BaseModel):
     debate_note: str | None = None
 
 
+class JobRankingBatchItem(JobRankingUpdate):
+    job_id: str
+
+
+class JobRankingBatchUpdate(BaseModel):
+    items: list[JobRankingBatchItem]
+
+
 class JobStructuredDataUpdate(BaseModel):
     data: dict
 
@@ -85,6 +93,14 @@ class JobScoreAndStatusUpdate(BaseModel):
 class JobWouldApplyUpdate(BaseModel):
     would_apply: bool
     reason: str
+
+
+class JobWouldApplyBatchItem(JobWouldApplyUpdate):
+    job_id: str
+
+
+class JobWouldApplyBatchUpdate(BaseModel):
+    items: list[JobWouldApplyBatchItem]
 
 
 class JobStats(BaseModel):

@@ -6,8 +6,9 @@ from db import get_db
 from deps import get_current_user
 from models import (
     DismissedItemCreate, JobCreate, JobCreateResult, JobDescriptionUpdate, JobOut,
-    JobRankingUpdate, JobScoreAndStatusUpdate, JobScoreUpdate, JobStats,
-    JobStatusUpdate, JobStructuredDataUpdate, JobWouldApplyUpdate, WouldApplyStats,
+    JobRankingBatchUpdate, JobRankingUpdate, JobScoreAndStatusUpdate, JobScoreUpdate,
+    JobStats, JobStatusUpdate, JobStructuredDataUpdate, JobWouldApplyBatchUpdate,
+    JobWouldApplyUpdate, WouldApplyStats,
 )
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -194,6 +195,12 @@ def update_ranking(job_id: str, body: JobRankingUpdate, user: dict = Depends(get
     return jobs_repo.get_by_id(conn, user["id"], job_id)
 
 
+@router.patch("/ranking")
+def update_ranking_batch(body: JobRankingBatchUpdate, user: dict = Depends(get_current_user), conn=Depends(get_db)):
+    updated = jobs_repo.update_ranking_scores_batch(conn, user["id"], [item.model_dump() for item in body.items])
+    return {"updated": updated}
+
+
 @router.patch("/{job_id}/structured-data", response_model=JobOut)
 def update_structured_data(
     job_id: str, body: JobStructuredDataUpdate, user: dict = Depends(get_current_user), conn=Depends(get_db),
@@ -210,6 +217,12 @@ def update_would_apply(
     _get_or_404(conn, user["id"], job_id)
     jobs_repo.update_would_apply(conn, user["id"], job_id, body.would_apply, body.reason)
     return jobs_repo.get_by_id(conn, user["id"], job_id)
+
+
+@router.patch("/would-apply")
+def update_would_apply_batch(body: JobWouldApplyBatchUpdate, user: dict = Depends(get_current_user), conn=Depends(get_db)):
+    updated = jobs_repo.update_would_apply_batch(conn, user["id"], [item.model_dump() for item in body.items])
+    return {"updated": updated}
 
 
 @router.get("/{job_id}/dismissed-items")

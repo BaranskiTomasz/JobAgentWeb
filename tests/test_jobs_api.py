@@ -187,6 +187,83 @@ def test_update_ranking(logged_in_client):
     assert body["debate_flag"] == "overrated"
 
 
+def test_update_ranking_batch(logged_in_client):
+    a = _create(logged_in_client, url="https://example.com/jobs/batch-a")["job_id"]
+    b = _create(logged_in_client, url="https://example.com/jobs/batch-b")["job_id"]
+
+    resp = logged_in_client.patch("/api/jobs/ranking", json={"items": [
+        {"job_id": a, "embedding_score": 0.8, "rerank_score": 0.9, "listwise_rank": 1,
+         "rank_reason": "top pick", "debate_flag": "overrated", "debate_note": "salary unclear"},
+        {"job_id": b, "embedding_score": 0.5, "rerank_score": None, "listwise_rank": None},
+    ]})
+    assert resp.status_code == 200
+    assert resp.json()["updated"] == 2
+
+    job_a = logged_in_client.get(f"/api/jobs/{a}").json()
+    assert job_a["listwise_rank"] == 1
+    assert job_a["debate_flag"] == "overrated"
+    job_b = logged_in_client.get(f"/api/jobs/{b}").json()
+    assert job_b["listwise_rank"] is None
+    assert job_b["embedding_score"] == 0.5
+
+
+def test_update_ranking_batch_all_null_optional_columns(logged_in_client):
+    # Regression: FROM (VALUES ...) infers each column's type from the literals
+    # across every row in the batch — a column that's NULL in every single row
+    # (rank_reason/debate_flag/debate_note for jobs outside the listwise-ranked
+    # top-20, which is most of rank_jobs.py's own batch on a normal run) risks
+    # Postgres picking the wrong type before the SET clause's cast ever applies.
+    a = _create(logged_in_client, url="https://example.com/jobs/batch-null-a")["job_id"]
+    b = _create(logged_in_client, url="https://example.com/jobs/batch-null-b")["job_id"]
+
+    resp = logged_in_client.patch("/api/jobs/ranking", json={"items": [
+        {"job_id": a, "embedding_score": 0.3, "rerank_score": None, "listwise_rank": None},
+        {"job_id": b, "embedding_score": 0.4, "rerank_score": None, "listwise_rank": None},
+    ]})
+    assert resp.status_code == 200
+    assert resp.json()["updated"] == 2
+    assert logged_in_client.get(f"/api/jobs/{a}").json()["embedding_score"] == 0.3
+
+
+def test_update_ranking_batch_skips_jobs_the_caller_does_not_own(logged_in_client, other_logged_in_client):
+    mine = _create(logged_in_client, url="https://example.com/jobs/batch-mine")["job_id"]
+    theirs = _create(other_logged_in_client, url="https://example.com/jobs/batch-theirs")["job_id"]
+
+    resp = logged_in_client.patch("/api/jobs/ranking", json={"items": [
+        {"job_id": mine, "embedding_score": 0.9, "rerank_score": None, "listwise_rank": None},
+        {"job_id": theirs, "embedding_score": 0.9, "rerank_score": None, "listwise_rank": None},
+    ]})
+    assert resp.status_code == 200
+    assert resp.json()["updated"] == 1  # only "mine" matched a state row for this user
+
+    theirs_row = other_logged_in_client.get(f"/api/jobs/{theirs}").json()
+    assert theirs_row["embedding_score"] is None
+
+
+def test_update_ranking_batch_empty_items(logged_in_client):
+    resp = logged_in_client.patch("/api/jobs/ranking", json={"items": []})
+    assert resp.status_code == 200
+    assert resp.json()["updated"] == 0
+
+
+def test_update_would_apply_batch(logged_in_client):
+    a = _create(logged_in_client, url="https://example.com/jobs/wa-batch-a")["job_id"]
+    b = _create(logged_in_client, url="https://example.com/jobs/wa-batch-b")["job_id"]
+
+    resp = logged_in_client.patch("/api/jobs/would-apply", json={"items": [
+        {"job_id": a, "would_apply": True, "reason": "score 8.0 >= 7.0"},
+        {"job_id": b, "would_apply": False, "reason": "dealbreaker_risk flagged"},
+    ]})
+    assert resp.status_code == 200
+    assert resp.json()["updated"] == 2
+
+    job_a = logged_in_client.get(f"/api/jobs/{a}").json()
+    assert job_a["would_apply"] is True
+    assert job_a["would_apply_reason"] == "score 8.0 >= 7.0"
+    job_b = logged_in_client.get(f"/api/jobs/{b}").json()
+    assert job_b["would_apply"] is False
+
+
 def test_update_structured_data_is_shared_across_users(logged_in_client, other_logged_in_client):
     result = _create(logged_in_client)
     logged_in_client.patch(f"/api/jobs/{result['job_id']}/structured-data", json={
