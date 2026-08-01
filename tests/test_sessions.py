@@ -55,3 +55,22 @@ def test_last_finished_ignores_cancelled_sessions(user, logged_in_client, db_con
     db_conn.commit()
 
     assert logged_in_client.get("/api/sessions/last-finished").json()["finished_at"] is None
+
+
+def test_finish_writes_utc_regardless_of_session_timezone(user, db_conn):
+    # Regression: JobAgent's _days_since_last_run() parses finished_at and diffs it
+    # against its own datetime.utcnow() with no timezone conversion. If finished_at
+    # followed this Postgres session/server's `timezone` GUC instead of always being
+    # UTC, that comparison would silently skew on any host not configured to UTC.
+    import sessions_repo
+
+    cur = db_conn.cursor()
+    cur.execute("SET timezone = 'America/New_York'")
+    cur.execute("INSERT INTO sessions (user_id, status) VALUES (%s, 'running') RETURNING id", (user["id"],))
+    session_id = cur.fetchone()[0]
+
+    sessions_repo.finish(db_conn, user["id"], session_id, jobs_found=1, jobs_scored=1)
+    db_conn.commit()
+
+    finished_at = sessions_repo.get_last_finished_at(db_conn, user["id"])
+    assert abs((finished_at - datetime.utcnow()).total_seconds()) < 5

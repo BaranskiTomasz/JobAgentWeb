@@ -100,13 +100,20 @@ _SCHEMA = """
     CREATE TABLE IF NOT EXISTS usage_log (
         id            INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at    TIMESTAMP DEFAULT (NOW() AT TIME ZONE 'utc'),
         model         TEXT NOT NULL,
         module        TEXT NOT NULL,
         input_tokens  INTEGER DEFAULT 0,
         output_tokens INTEGER DEFAULT 0,
         cost_usd      REAL DEFAULT 0.0
     );
+
+    -- Guarantee UTC even for a database created before this default existed:
+    -- JobAgent's record_run_summary() compares this column against a UTC
+    -- started_at it generates itself (usage_repository.now_iso()), so a value
+    -- following the server's `timezone` GUC instead of UTC would silently skew
+    -- that comparison on any host not configured to UTC.
+    ALTER TABLE usage_log ALTER COLUMN created_at SET DEFAULT (NOW() AT TIME ZONE 'utc');
 
     CREATE INDEX IF NOT EXISTS idx_usage_log_user_created ON usage_log(user_id, created_at);
 

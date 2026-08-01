@@ -8,10 +8,15 @@ def start(conn, user_id: int) -> int:
 
 
 def finish(conn, user_id: int, session_id: int, jobs_found: int, jobs_scored: int, status: str = "done") -> None:
+    # finished_at must be UTC regardless of this Postgres session/server's timezone
+    # setting: JobAgent's _days_since_last_run() parses it and diffs it against its
+    # own datetime.utcnow() with no timezone conversion, so a naive CURRENT_TIMESTAMP
+    # value (which follows the server's `timezone` GUC, not necessarily UTC) would
+    # silently skew that math on any host not configured to UTC.
     cur = conn.cursor()
     cur.execute(
         """UPDATE sessions
-           SET finished_at = CURRENT_TIMESTAMP, jobs_found = %s, jobs_scored = %s, status = %s
+           SET finished_at = (NOW() AT TIME ZONE 'utc'), jobs_found = %s, jobs_scored = %s, status = %s
            WHERE user_id = %s AND id = %s""",
         (jobs_found, jobs_scored, status, user_id, session_id),
     )
@@ -20,7 +25,7 @@ def finish(conn, user_id: int, session_id: int, jobs_found: int, jobs_scored: in
 def cancel_active(conn, user_id: int) -> None:
     cur = conn.cursor()
     cur.execute(
-        """UPDATE sessions SET status='cancelled', finished_at=CURRENT_TIMESTAMP
+        """UPDATE sessions SET status='cancelled', finished_at=(NOW() AT TIME ZONE 'utc')
            WHERE user_id = %s AND status='running'""",
         (user_id,),
     )
