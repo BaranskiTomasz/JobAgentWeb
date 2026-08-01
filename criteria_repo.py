@@ -50,3 +50,9 @@ def toggle(conn, user_id: int, criteria_id: int, is_active: bool) -> None:
 def delete(conn, user_id: int, criteria_id: int) -> None:
     cur = conn.cursor()
     cur.execute("DELETE FROM criteria WHERE user_id = %s AND id = %s", (user_id, criteria_id))
+
+
+def delete_by_type(conn, user_id: int, type_: str) -> int:
+    cur = conn.cursor()
+    cur.execute("DELETE FROM criteria WHERE user_id = %s AND type = %s", (user_id, type_))
+    return cur.rowcount

@@ -46,3 +46,30 @@ def test_toggle_and_delete(logged_in_client):
 
     logged_in_client.delete(f"/api/criteria/{row['id']}")
     assert logged_in_client.get("/api/criteria").json() == []
+
+
+def test_delete_by_type_removes_only_that_type(logged_in_client):
+    logged_in_client.post("/api/criteria", json={"type": "title", "value": "Backend"})
+    logged_in_client.post("/api/criteria", json={"type": "title", "value": "Platform"})
+    logged_in_client.post("/api/criteria", json={"type": "location", "value": "Poland"})
+
+    resp = logged_in_client.delete("/api/criteria/by-type/title")
+    assert resp.json()["deleted"] == 2
+
+    remaining = logged_in_client.get("/api/criteria").json()
+    assert [r["type"] for r in remaining] == ["location"]
+
+
+def test_delete_by_type_is_scoped_to_the_caller(logged_in_client, other_logged_in_client):
+    logged_in_client.post("/api/criteria", json={"type": "title", "value": "Backend"})
+    other_logged_in_client.post("/api/criteria", json={"type": "title", "value": "Frontend"})
+
+    logged_in_client.delete("/api/criteria/by-type/title")
+
+    assert logged_in_client.get("/api/criteria").json() == []
+    assert len(other_logged_in_client.get("/api/criteria").json()) == 1
+
+
+def test_delete_by_type_with_no_matches_is_a_noop(logged_in_client):
+    resp = logged_in_client.delete("/api/criteria/by-type/title")
+    assert resp.json()["deleted"] == 0

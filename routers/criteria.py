@@ -37,3 +37,9 @@ def toggle_criteria(criteria_id: int, body: CriteriaToggle, user: dict = Depends
 def delete_criteria(criteria_id: int, user: dict = Depends(get_current_user), conn=Depends(get_db)):
     criteria_repo.delete(conn, user["id"], criteria_id)
     return {"ok": True}
+
+
+@router.delete("/by-type/{type_}")
+def delete_criteria_by_type(type_: str, user: dict = Depends(get_current_user), conn=Depends(get_db)):
+    deleted = criteria_repo.delete_by_type(conn, user["id"], type_)
+    return {"deleted": deleted}
