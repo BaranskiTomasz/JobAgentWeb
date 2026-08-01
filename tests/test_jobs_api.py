@@ -315,6 +315,26 @@ def test_search_filters_by_status_and_min_score(logged_in_client):
     assert ids == [a]
 
 
+def test_search_limit_and_offset(logged_in_client):
+    a = _create(logged_in_client, url="https://example.com/jobs/a", title="A")["job_id"]
+    b = _create(logged_in_client, url="https://example.com/jobs/b", title="B")["job_id"]
+    c = _create(logged_in_client, url="https://example.com/jobs/c", title="C")["job_id"]
+    logged_in_client.patch(f"/api/jobs/{a}/score", json={"score": 9.0, "reason": "great"})
+    logged_in_client.patch(f"/api/jobs/{b}/score", json={"score": 8.0, "reason": "good"})
+    logged_in_client.patch(f"/api/jobs/{c}/score", json={"score": 7.0, "reason": "ok"})
+
+    resp = logged_in_client.get("/api/jobs", params={"limit": 2})
+    ids = [j["id"] for j in resp.json()]
+    assert ids == [a, b]
+
+    resp = logged_in_client.get("/api/jobs", params={"limit": 2, "offset": 2})
+    ids = [j["id"] for j in resp.json()]
+    assert ids == [c]
+
+    resp = logged_in_client.get("/api/jobs")
+    assert len(resp.json()) == 3
+
+
 def test_stats_endpoint(logged_in_client):
     a = _create(logged_in_client, url="https://example.com/jobs/a")["job_id"]
     logged_in_client.patch(f"/api/jobs/{a}/status", json={"status": "applied"})

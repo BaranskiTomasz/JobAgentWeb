@@ -86,6 +86,8 @@ def search(
     min_score: float | None = None,
     query: str | None = None,
     source: str | None = None,
+    limit: int | None = None,
+    offset: int | None = None,
 ) -> list[dict]:
     cur = dict_cursor(conn)
     sql = f"SELECT {_JOB_COLUMNS} {_JOB_FROM} WHERE ujs.user_id = %s"
@@ -107,6 +109,12 @@ def search(
 
     sql += (" ORDER BY ujs.score DESC NULLS LAST, ujs.rerank_score DESC NULLS LAST,"
             " ujs.embedding_score DESC NULLS LAST, ujs.created_at DESC")
+    if limit is not None:
+        sql += " LIMIT %s"
+        params.append(limit)
+    if offset is not None:
+        sql += " OFFSET %s"
+        params.append(offset)
     cur.execute(sql, params)
     return [_row_to_job(r) for r in cur.fetchall()]
 

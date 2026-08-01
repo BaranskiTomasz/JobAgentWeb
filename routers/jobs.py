@@ -27,10 +27,15 @@ def list_jobs(
     min_score: float | None = None,
     query: str | None = None,
     source: str | None = None,
+    limit: int | None = None,
+    offset: int | None = None,
     user: dict = Depends(get_current_user),
     conn=Depends(get_db),
 ):
-    return jobs_repo.search(conn, user["id"], status=status, min_score=min_score, query=query, source=source)
+    return jobs_repo.search(
+        conn, user["id"], status=status, min_score=min_score, query=query, source=source,
+        limit=limit, offset=offset,
+    )
 
 
 @router.get("/stats", response_model=JobStats)
