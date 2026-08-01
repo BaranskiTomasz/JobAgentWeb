@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+import rate_limit
 import users_repo
 from config import INVITE_CODE
 from db import get_db
-from security import hash_password, verify_password
+from security import DUMMY_PASSWORD_HASH, hash_password, verify_password
 
 router = APIRouter(tags=["auth"])
 templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
@@ -22,12 +23,18 @@ def login_page(request: Request):
 
 @router.post("/login", response_class=HTMLResponse)
 def login_submit(request: Request, username: str = Form(...), password: str = Form(...), conn=Depends(get_db)):
+    rate_limit.enforce(request, "login", key=username.strip().lower())
     user = users_repo.get_by_username(conn, username)
-    if not user or not verify_password(password, user["password_hash"]):
+    # Always call verify_password, even for an unknown username — checking against
+    # DUMMY_PASSWORD_HASH keeps the response time the same either way, so timing
+    # alone can't be used to enumerate which usernames exist.
+    valid = verify_password(password, user["password_hash"] if user else DUMMY_PASSWORD_HASH)
+    if not user or not valid:
         return templates.TemplateResponse(
             request, "login.html", {"error": "Invalid username or password"}, status_code=400,
         )
     request.session["user_id"] = user["id"]
+    request.session["session_epoch"] = user["session_epoch"]
     return RedirectResponse("/", status_code=303)
 
 
@@ -47,6 +54,7 @@ def register_submit(
     invite_code: str = Form(""),
     conn=Depends(get_db),
 ):
+    rate_limit.enforce(request, "register")
     username = username.strip()
     error = None
     if not INVITE_CODE:
@@ -67,10 +75,16 @@ def register_submit(
 
     user_id = users_repo.create(conn, username, hash_password(password))
     request.session["user_id"] = user_id
+    request.session["session_epoch"] = 0  # matches the users.session_epoch column default
     return RedirectResponse("/", status_code=303)
 
 
 @router.post("/logout")
-def logout(request: Request):
+def logout(request: Request, conn=Depends(get_db)):
+    user_id = request.session.get("user_id")
+    if user_id is not None:
+        # Bumps the DB epoch so every other outstanding cookie for this user (any
+        # device) stops matching on its next request too — not just this one.
+        users_repo.bump_session_epoch(conn, user_id)
     request.session.clear()
     return RedirectResponse("/login", status_code=303)

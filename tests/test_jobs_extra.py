@@ -8,11 +8,25 @@ def _create(client, **overrides):
     return client.post("/api/jobs", json=body).json()
 
 
-def test_get_all_urls_is_system_wide(logged_in_client, other_logged_in_client):
+def test_get_all_urls_is_scoped_to_the_caller(logged_in_client, other_logged_in_client):
+    # Regression: this used to be system-wide, which meant most collector
+    # sources (skip-if-known-url) silently never even tried to insert a
+    # posting another user had already found — the shared pool never got
+    # shared. Each user's known-urls set must reflect only their own state.
     _create(logged_in_client, url="https://example.com/jobs/a")
     _create(other_logged_in_client, url="https://example.com/jobs/b")
-    urls = logged_in_client.get("/api/jobs/urls").json()["urls"]
-    assert set(urls) == {"https://example.com/jobs/a", "https://example.com/jobs/b"}
+
+    assert logged_in_client.get("/api/jobs/urls").json()["urls"] == ["https://example.com/jobs/a"]
+    assert other_logged_in_client.get("/api/jobs/urls").json()["urls"] == ["https://example.com/jobs/b"]
+
+
+def test_get_all_urls_includes_a_shared_posting_once_this_user_links_it(logged_in_client, other_logged_in_client):
+    _create(logged_in_client, url="https://example.com/jobs/shared")
+    assert other_logged_in_client.get("/api/jobs/urls").json()["urls"] == []
+
+    # Second user reuses the same posting — insert() links it to their own state.
+    _create(other_logged_in_client, url="https://example.com/jobs/shared")
+    assert other_logged_in_client.get("/api/jobs/urls").json()["urls"] == ["https://example.com/jobs/shared"]
 
 
 def test_missing_descriptions(logged_in_client):
@@ -35,6 +49,32 @@ def test_update_description_is_shared(logged_in_client, other_logged_in_client):
     logged_in_client.patch(f"/api/jobs/{job_id}/description", json={"description": "Shared text."})
     theirs = other_logged_in_client.get(f"/api/jobs/{job_id}").json()
     assert theirs["description"] == "Shared text."
+
+
+def test_update_description_is_write_once(logged_in_client, other_logged_in_client):
+    # Regression: any user who links to a shared posting could otherwise
+    # overwrite its description at will, corrupting it for every other user
+    # who's found the same URL — with no ownership check at all.
+    job_id = _create(logged_in_client, description="Original text.")["job_id"]
+    other_logged_in_client.post("/api/jobs", json={
+        "title": "Backend Engineer", "company": "Acme", "location": "Remote",
+        "url": "https://example.com/jobs/1", "source": "linkedin",
+    })
+    other_logged_in_client.patch(f"/api/jobs/{job_id}/description", json={"description": "Malicious overwrite."})
+    mine = logged_in_client.get(f"/api/jobs/{job_id}").json()
+    assert mine["description"] == "Original text."
+
+
+def test_update_structured_data_is_write_once(logged_in_client, other_logged_in_client):
+    job_id = _create(logged_in_client)["job_id"]
+    logged_in_client.patch(f"/api/jobs/{job_id}/structured-data", json={"data": {"remote": True}})
+    other_logged_in_client.post("/api/jobs", json={
+        "title": "Backend Engineer", "company": "Acme", "location": "Remote",
+        "url": "https://example.com/jobs/1", "source": "linkedin",
+    })
+    other_logged_in_client.patch(f"/api/jobs/{job_id}/structured-data", json={"data": {"remote": False}})
+    mine = logged_in_client.get(f"/api/jobs/{job_id}").json()
+    assert '"remote": true' in mine["structured_data"]
 
 
 def test_update_score_and_status(logged_in_client):

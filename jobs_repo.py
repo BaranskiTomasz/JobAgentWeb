@@ -163,10 +163,14 @@ def update_would_apply(conn, user_id: int, job_id: str, would_apply: bool, reaso
 def update_structured_data(conn, job_id: str, data: dict) -> None:
     """Shared, not user-scoped — structured_data is an LLM extraction of the
     posting itself (stack/seniority/remote/etc.), true for every user who sees
-    this posting, so whoever extracts it first benefits everyone else too."""
+    this posting, so whoever extracts it first benefits everyone else too.
+    Write-once (only fills a NULL value): any authenticated user who has ever
+    linked to this posting can call this endpoint, so without this guard one
+    user could silently overwrite another user's already-extracted data."""
     cur = conn.cursor()
     cur.execute(
-        "UPDATE job_postings SET structured_data = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+        "UPDATE job_postings SET structured_data = %s, updated_at = CURRENT_TIMESTAMP"
+        " WHERE id = %s AND structured_data IS NULL",
         (json.dumps(data, ensure_ascii=False), job_id),
     )
 
@@ -203,15 +207,19 @@ def get_stats(conn, user_id: int) -> dict:
     return row
 
 
-def get_all_urls(conn) -> set[str]:
-    """Every known posting URL, system-wide (not user-scoped) — lets a
-    collector stop paginating once it starts hitting only already-known
-    results, since re-scraping a posting anyone has already found wastes
-    time. A posting being globally known doesn't stop `insert()` from still
-    linking it to a new user; this is purely a client-side early-stop signal,
-    not a per-user duplicate filter."""
+def get_all_urls(conn, user_id: int) -> set[str]:
+    """URLs of postings *this user* already has a state row for. Scoped by
+    user, not system-wide: most collector sources skip a card outright when
+    its URL is already "known" (never calling insert() at all), so a global
+    set here meant a second user's collector silently skipped every posting
+    the first user had already found — the shared pool never actually got
+    shared. A URL unknown to this user still resolves correctly in insert()
+    (reuses the existing job_postings row, just adds this user's state row)."""
     cur = dict_cursor(conn)
-    cur.execute("SELECT url FROM job_postings")
+    cur.execute(
+        "SELECT jp.url FROM job_postings jp JOIN user_job_states ujs ON ujs.job_id = jp.id WHERE ujs.user_id = %s",
+        (user_id,),
+    )
     return {r["url"] for r in cur.fetchall()}
 
 
@@ -229,10 +237,11 @@ def get_missing_descriptions(conn, user_id: int) -> list[dict]:
 
 
 def update_description(conn, job_id: str, description: str) -> None:
-    """Shared, not user-scoped — same reasoning as update_structured_data."""
+    """Shared, not user-scoped, write-once — same reasoning as update_structured_data."""
     cur = conn.cursor()
     cur.execute(
-        "UPDATE job_postings SET description = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+        "UPDATE job_postings SET description = %s, updated_at = CURRENT_TIMESTAMP"
+        " WHERE id = %s AND (description IS NULL OR description = '')",
         (description, job_id),
     )
 
@@ -406,8 +415,14 @@ def count_decisions(conn, user_id: int) -> int:
     return cur.fetchone()[0]
 
 
+_PRUNING_LOOKBACK_DAYS = 30
+
+
 def get_query_outcome_stats(conn, user_id: int, source: str) -> list[dict]:
-    """Per search_query outcome totals for one source, for this user."""
+    """Per search_query outcome totals for one source, for this user, over the
+    trailing _PRUNING_LOOKBACK_DAYS. Windowed rather than all-time: a query that
+    was reject-heavy a year ago but has been fine since shouldn't stay excluded
+    forever on the strength of decisions the user has long moved past."""
     cur = dict_cursor(conn)
     cur.execute(
         """SELECT
@@ -418,21 +433,26 @@ def get_query_outcome_stats(conn, user_id: int, source: str) -> list[dict]:
                SUM(CASE WHEN ujs.status = 'reviewed' THEN 1 ELSE 0 END)              AS reviewed_total
            FROM job_postings jp JOIN user_job_states ujs ON ujs.job_id = jp.id
            WHERE ujs.user_id = %s AND jp.source = %s AND jp.search_query IS NOT NULL AND ujs.status != 'new'
+             AND ujs.updated_at >= NOW() - INTERVAL '1 day' * %s
            GROUP BY jp.search_query""",
-        (user_id, source),
+        (user_id, source, _PRUNING_LOOKBACK_DAYS),
     )
     return [dict(r) for r in cur.fetchall()]
 
 
 def get_ranked(conn, user_id: int, statuses: list[str]) -> list[dict]:
     """Ranked jobs (any of the given statuses) ordered by listwise_rank — the
-    calibration report's source of truth for precision@K / divergence cases."""
+    calibration report's source of truth for precision@K / divergence cases.
+    listwise_rank is only ever 1-20 and freezes the moment a job is decided
+    (re-ranking only touches the live 'new' pool), so after enough decisions many
+    rows share the same rank; the updated_at tiebreak surfaces the most recent
+    ones first instead of an arbitrary (effectively oldest-first) tie order."""
     cur = dict_cursor(conn)
     placeholders = ",".join(["%s"] * len(statuses))
     cur.execute(
         f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
             WHERE ujs.user_id = %s AND ujs.listwise_rank IS NOT NULL AND ujs.status IN ({placeholders})
-            ORDER BY ujs.listwise_rank ASC""",
+            ORDER BY ujs.listwise_rank ASC, ujs.updated_at DESC""",
         [user_id, *statuses],
     )
     return [_row_to_job(r) for r in cur.fetchall()]

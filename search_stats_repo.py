@@ -31,16 +31,23 @@ def get_query_summary(conn, user_id: int, source: str) -> list[dict]:
     return [dict(r) for r in cur.fetchall()]
 
 
+_ZERO_YIELD_LOOKBACK_DAYS = 30
+
+
 def get_zero_yield_queries(conn, user_id: int, source: str, min_searches: int) -> list[str]:
-    """search_query values searched at least min_searches times for this source
-    where every single search found zero *new* jobs."""
+    """search_query values searched at least min_searches times for this source in
+    the trailing _ZERO_YIELD_LOOKBACK_DAYS where every one of those searches found
+    zero *new* jobs. Windowed, not all-time — a niche query finding nothing on any
+    given day is normal (see collector's README), so an all-time count meant five
+    quiet days anywhere in the query's history excluded it permanently, with no way
+    for it to ever recover even after the market picked back up."""
     cur = dict_cursor(conn)
     cur.execute(
         """SELECT search_query
            FROM search_stats
-           WHERE user_id = %s AND source = %s
+           WHERE user_id = %s AND source = %s AND searched_at >= NOW() - INTERVAL '1 day' * %s
            GROUP BY search_query
            HAVING COUNT(*) >= %s AND SUM(new_found) = 0""",
-        (user_id, source, min_searches),
+        (user_id, source, _ZERO_YIELD_LOOKBACK_DAYS, min_searches),
     )
     return [r["search_query"] for r in cur.fetchall()]

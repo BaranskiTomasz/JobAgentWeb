@@ -14,6 +14,12 @@ def get_current_user(request: Request, conn=Depends(get_db)) -> dict:
         # admin) — drop the stale session instead of leaving it around.
         request.session.clear()
         raise HTTPException(status_code=401, detail="Not authenticated")
+    if request.session.get("session_epoch") != user["session_epoch"]:
+        # A logout (this device or another) bumped the DB epoch since this
+        # cookie was issued — the signed cookie itself is still cryptographically
+        # valid, so this is the only way "logged out" actually takes effect.
+        request.session.clear()
+        raise HTTPException(status_code=401, detail="Not authenticated")
     return user
 
 

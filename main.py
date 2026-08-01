@@ -56,12 +56,14 @@ templates = Jinja2Templates(directory=_BASE_DIR / "templates")
 
 def _require_user(request: Request, conn) -> dict | None:
     """Resolves the session to a user row, or None (having already issued a
-    redirect-worthy response) if not logged in / the account no longer exists."""
+    redirect-worthy response) if not logged in / the account no longer exists,
+    or if a logout (this device or another) has since bumped session_epoch —
+    see deps.get_current_user for why that check exists."""
     user_id = request.session.get("user_id")
     if not user_id:
         return None
     user = users_repo.get_by_id(conn, user_id)
-    if user is None:
+    if user is None or request.session.get("session_epoch") != user["session_epoch"]:
         request.session.clear()
         return None
     return user

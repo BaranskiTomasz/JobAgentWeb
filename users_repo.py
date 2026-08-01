@@ -33,3 +33,12 @@ def list_all(conn) -> list[dict]:
 def delete(conn, user_id: int) -> None:
     cur = conn.cursor()
     cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+
+
+def bump_session_epoch(conn, user_id: int) -> None:
+    """Invalidates every outstanding session cookie for this user (all devices) —
+    the epoch stamped into a cookie at login stops matching the DB value the
+    moment this runs. Session cookies alone have no server-side revocation
+    otherwise, so this is what a real "logout" needs to actually mean."""
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET session_epoch = session_epoch + 1 WHERE id = %s", (user_id,))

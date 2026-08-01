@@ -184,6 +184,7 @@ _SCHEMA = """
 _NEW_COLUMNS = [
     ("preference_profiles", "content_format", "TEXT DEFAULT 'text'"),
     ("preference_profiles", "dismissed_count", "INTEGER DEFAULT 0"),
+    ("users", "session_epoch", "INTEGER DEFAULT 0"),
 ]
 
 

@@ -15,6 +15,8 @@ os.environ.setdefault("POSTGRES_PASSWORD", "test_only_pw_923nf")
 # default (true), since the site is genuinely served over HTTPS there.
 os.environ.setdefault("SESSION_HTTPS_ONLY", "false")
 os.environ.setdefault("INVITE_CODE", "test-invite-code")
+os.environ.setdefault("SECRET_KEY", "test-only-secret-key-not-real-923nf")
+os.environ.setdefault("DISABLE_RATE_LIMIT", "true")  # most tests register/log in far more than a real client would
 
 import pytest
 from fastapi.testclient import TestClient
@@ -49,6 +51,17 @@ def _clean_tables():
         conn.commit()
     finally:
         db_module._get_pool().putconn(conn)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """rate_limit's counters are a module-level dict, not DB state — _clean_tables
+    doesn't touch them, so every test would otherwise share the same in-memory
+    window (keyed by TestClient's fixed fake IP) and could spuriously trip on
+    another test's earlier requests."""
+    import rate_limit
+    rate_limit._attempts.clear()
     yield
 
 

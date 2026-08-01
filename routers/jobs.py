@@ -44,7 +44,7 @@ def would_apply_stats(user: dict = Depends(get_current_user), conn=Depends(get_d
 
 @router.get("/urls")
 def get_all_urls(user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    return {"urls": list(jobs_repo.get_all_urls(conn))}
+    return {"urls": list(jobs_repo.get_all_urls(conn, user["id"]))}
 
 
 @router.get("/missing-descriptions")
