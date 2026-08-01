@@ -1,3 +1,47 @@
+import threading
+
+import db as db_module
+import jobs_repo
+
+
+def test_concurrent_insert_of_the_same_new_url_does_not_raise(user, other_user):
+    # Regression: this used to be check-then-insert (SELECT, then INSERT if not
+    # found) — two collectors racing on a brand-new URL both saw "not found" and
+    # both tried to INSERT the same deterministic id, so the loser hit a
+    # duplicate-key error. In production this was silently swallowed by the
+    # collector's generic except-and-skip, leaving that run's user with no state
+    # row at all. ON CONFLICT DO NOTHING makes this genuinely atomic instead.
+    job = {
+        "title": "Race Condition Engineer", "company": "Acme", "location": "Remote",
+        "url": "https://example.com/jobs/race-1", "source": "linkedin", "description": "Build things.",
+    }
+    results = {}
+    errors = []
+    barrier = threading.Barrier(2)
+
+    def _insert(key, user_id):
+        conn = db_module._get_pool().getconn()
+        try:
+            barrier.wait(timeout=5)  # maximize the chance both hit INSERT together
+            results[key] = jobs_repo.insert(conn, user_id, job)
+            conn.commit()
+        except Exception as e:  # pragma: no cover - only hit if the race isn't fixed
+            conn.rollback()
+            errors.append(e)
+        finally:
+            db_module._get_pool().putconn(conn)
+
+    t1 = threading.Thread(target=_insert, args=("a", user["id"]))
+    t2 = threading.Thread(target=_insert, args=("b", other_user["id"]))
+    t1.start(); t2.start()
+    t1.join(); t2.join()
+
+    assert errors == []
+    assert results["a"]["job_id"] == results["b"]["job_id"]
+    # Exactly one of the two racing inserts created the shared posting.
+    assert sorted([results["a"]["posting_created"], results["b"]["posting_created"]]) == [False, True]
+
+
 def _create(client, **overrides):
     body = {
         "title": "Backend Engineer",

@@ -30,37 +30,40 @@ def _row_to_job(row: dict) -> dict:
 def insert(conn, user_id: int, job: dict) -> dict:
     """job_id is None only if this user already has a state for this posting.
     posting_created=False (posting known from another user) tells the caller to
-    skip re-fetching/re-extracting."""
+    skip re-fetching/re-extracting.
+
+    Atomic (ON CONFLICT DO NOTHING), not check-then-insert: two collectors
+    racing on the same URL — e.g. two runs started within a second of each
+    other, which is exactly what happened in production once — used to hit a
+    duplicate-key error on the second insert, which the collector's generic
+    except-and-skip swallowed, leaving that run's caller with no state row and
+    no error either. job_id is deterministic from the URL (_generate_id), so
+    it's correct whether or not this call's own INSERT is the one that wins."""
     cur = dict_cursor(conn)
-
-    cur.execute("SELECT id FROM job_postings WHERE url = %s", (job["url"],))
-    existing = cur.fetchone()
-
-    if existing:
-        job_id = existing["id"]
-        posting_created = False
-    else:
-        job_id = _generate_id(job["url"])
-        cur.execute(
-            """INSERT INTO job_postings (id, title, company, location, url, description, source, source_id, search_query)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (job_id, job["title"], job.get("company"), job.get("location"), job["url"],
-             job.get("description"), job.get("source", "linkedin"), job.get("source_id"),
-             job.get("search_query")),
-        )
-        posting_created = True
+    job_id = _generate_id(job["url"])
 
     cur.execute(
-        "SELECT id FROM user_job_states WHERE user_id = %s AND job_id = %s",
+        # No conflict target: id and url are both unique constraints on this
+        # table and both are deterministic from the same url, so a genuine
+        # concurrent race can trip either one depending on timing — targeting
+        # just one (e.g. "ON CONFLICT (url)") leaves the other race window open.
+        """INSERT INTO job_postings (id, title, company, location, url, description, source, source_id, search_query)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+           ON CONFLICT DO NOTHING
+           RETURNING id""",
+        (job_id, job["title"], job.get("company"), job.get("location"), job["url"],
+         job.get("description"), job.get("source", "linkedin"), job.get("source_id"),
+         job.get("search_query")),
+    )
+    posting_created = cur.fetchone() is not None
+
+    cur.execute(
+        "INSERT INTO user_job_states (user_id, job_id) VALUES (%s, %s) ON CONFLICT (user_id, job_id) DO NOTHING RETURNING id",
         (user_id, job_id),
     )
-    if cur.fetchone():
+    if cur.fetchone() is None:
         return {"job_id": None, "posting_created": False}
 
-    cur.execute(
-        "INSERT INTO user_job_states (user_id, job_id) VALUES (%s, %s)",
-        (user_id, job_id),
-    )
     return {"job_id": job_id, "posting_created": posting_created}
 
 
