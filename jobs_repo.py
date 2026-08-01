@@ -362,21 +362,32 @@ def get_examples(conn, user_id: int, limit_positive: int = 25, limit_negative: i
     return positive, negative
 
 
-def get_all_feedback(conn, user_id: int) -> tuple[list[dict], list[dict]]:
+def get_all_feedback(
+    conn, user_id: int, limit_applied: int | None = None, limit_rejected: int | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Most-recent-first, optionally capped, with descriptions truncated to 1500
+    chars server-side (_job_line() in preference_agent/runner.py only ever uses
+    the first 1500 chars of a description anyway — no point shipping the rest)."""
     cur = dict_cursor(conn)
-    cur.execute(
-        """SELECT jp.title, jp.company, jp.location, jp.description, ujs.score_reason
-           FROM job_postings jp JOIN user_job_states ujs ON ujs.job_id = jp.id
-           WHERE ujs.user_id = %s AND ujs.status = 'applied' ORDER BY ujs.updated_at DESC""",
-        (user_id,),
-    )
+    sql = """SELECT jp.title, jp.company, jp.location, LEFT(jp.description, 1500) AS description, ujs.score_reason
+             FROM job_postings jp JOIN user_job_states ujs ON ujs.job_id = jp.id
+             WHERE ujs.user_id = %s AND ujs.status = 'applied' ORDER BY ujs.updated_at DESC"""
+    params = [user_id]
+    if limit_applied is not None:
+        sql += " LIMIT %s"
+        params.append(limit_applied)
+    cur.execute(sql, params)
     applied = [dict(r) for r in cur.fetchall()]
-    cur.execute(
-        """SELECT jp.title, jp.company, jp.location, jp.description, ujs.rejection_reason, ujs.score_reason
-           FROM job_postings jp JOIN user_job_states ujs ON ujs.job_id = jp.id
-           WHERE ujs.user_id = %s AND ujs.status = 'rejected' ORDER BY ujs.updated_at DESC""",
-        (user_id,),
-    )
+
+    sql = """SELECT jp.title, jp.company, jp.location, LEFT(jp.description, 1500) AS description,
+                     ujs.rejection_reason, ujs.score_reason
+              FROM job_postings jp JOIN user_job_states ujs ON ujs.job_id = jp.id
+              WHERE ujs.user_id = %s AND ujs.status = 'rejected' ORDER BY ujs.updated_at DESC"""
+    params = [user_id]
+    if limit_rejected is not None:
+        sql += " LIMIT %s"
+        params.append(limit_rejected)
+    cur.execute(sql, params)
     rejected = [dict(r) for r in cur.fetchall()]
     return applied, rejected
 

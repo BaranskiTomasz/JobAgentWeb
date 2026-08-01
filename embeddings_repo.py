@@ -74,20 +74,30 @@ def score_by_similarity(conn, ideal: list[float], job_ids: list[str]) -> dict[st
     return {job_id: _cosine_similarity(ideal, vec) for job_id, vec in vectors.items()}
 
 
+_DECISION_VECTOR_LIMIT = 50
+
+
 def get_decision_vectors(conn, user_id: int) -> dict:
-    """Embedding vectors for jobs this user has applied to / rejected — the
-    basis for the 'ideal job' centroid used in semantic ranking."""
+    """Embedding vectors for this user's _DECISION_VECTOR_LIMIT most recent applied
+    / rejected jobs — the basis for the 'ideal job' centroid used in semantic
+    ranking. Capped and most-recent-first, not the full history: an unbounded,
+    unweighted centroid means a decision from a year ago counts exactly as much
+    as one from yesterday, so the centroid can never adapt if the candidate's
+    search intent genuinely shifts (backend → platform, IC → lead) — old
+    decisions just keep diluting new ones forever instead of aging out."""
     cur = dict_cursor(conn)
     cur.execute(
         """SELECT je.embedding FROM job_embeddings je JOIN user_job_states ujs ON ujs.job_id = je.job_id
-           WHERE ujs.user_id = %s AND ujs.status = 'applied'""",
-        (user_id,),
+           WHERE ujs.user_id = %s AND ujs.status = 'applied'
+           ORDER BY ujs.updated_at DESC LIMIT %s""",
+        (user_id, _DECISION_VECTOR_LIMIT),
     )
     applied = [json.loads(r["embedding"]) for r in cur.fetchall()]
     cur.execute(
         """SELECT je.embedding FROM job_embeddings je JOIN user_job_states ujs ON ujs.job_id = je.job_id
-           WHERE ujs.user_id = %s AND ujs.status = 'rejected'""",
-        (user_id,),
+           WHERE ujs.user_id = %s AND ujs.status = 'rejected'
+           ORDER BY ujs.updated_at DESC LIMIT %s""",
+        (user_id, _DECISION_VECTOR_LIMIT),
     )
     rejected = [json.loads(r["embedding"]) for r in cur.fetchall()]
     return {"applied": applied, "rejected": rejected}

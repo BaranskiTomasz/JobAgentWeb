@@ -75,6 +75,27 @@ def test_decision_vectors_scoped_per_user(logged_in_client, other_logged_in_clie
     assert theirs["applied"] == []
 
 
+def test_decision_vectors_capped_to_most_recent(logged_in_client):
+    # Regression: an unbounded, unweighted centroid means a decision from a year
+    # ago counts exactly as much as yesterday's — old decisions never age out.
+    # 55 applied jobs, decided in order — only the 50 most recent should come back.
+    from embeddings_repo import _DECISION_VECTOR_LIMIT
+    total = _DECISION_VECTOR_LIMIT + 5
+    for i in range(total):
+        job_id = _create(logged_in_client, url=f"https://example.com/jobs/decision-vec-{i}")
+        logged_in_client.post("/api/embeddings", json={
+            "items": [{"job_id": job_id, "embedding": [float(i)], "model": "voyage-3-large"}],
+        })
+        logged_in_client.patch(f"/api/jobs/{job_id}/status", json={"status": "applied"})
+
+    applied = logged_in_client.get("/api/embeddings/decision-vectors").json()["applied"]
+    assert len(applied) == _DECISION_VECTOR_LIMIT
+    values = {v[0] for v in applied}
+    # Most recent _DECISION_VECTOR_LIMIT (highest i, decided last) must be kept,
+    # the oldest (lowest i) dropped.
+    assert values == set(float(i) for i in range(5, total))
+
+
 def test_requires_login(client):
     assert client.get("/api/embeddings/ids").status_code == 401
 

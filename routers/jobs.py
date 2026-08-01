@@ -83,11 +83,14 @@ def get_examples(
 
 
 @router.get("/feedback")
-def get_all_feedback(since: str | None = None, user: dict = Depends(get_current_user), conn=Depends(get_db)):
+def get_all_feedback(
+    since: str | None = None, limit_applied: int | None = None, limit_rejected: int | None = None,
+    user: dict = Depends(get_current_user), conn=Depends(get_db),
+):
     if since:
         applied, rejected = jobs_repo.get_feedback_since(conn, user["id"], since)
     else:
-        applied, rejected = jobs_repo.get_all_feedback(conn, user["id"])
+        applied, rejected = jobs_repo.get_all_feedback(conn, user["id"], limit_applied, limit_rejected)
     return {"applied": applied, "rejected": rejected}
 
 

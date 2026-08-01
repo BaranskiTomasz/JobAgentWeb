@@ -126,6 +126,32 @@ def test_examples_and_feedback(logged_in_client):
     assert logged_in_client.get("/api/jobs/decisions-count").json()["count"] == 2
 
 
+def test_feedback_respects_limit_params(logged_in_client):
+    # Regression: get_all_feedback() shipped every applied/rejected job's full
+    # description unconditionally — preference_agent/runner.py only ever used
+    # the 50 most recent rejected (and, before this fix, an unbounded number of
+    # applied). Most-recent-first ordering means the limit keeps the newest.
+    ids = []
+    for i in range(3):
+        jid = _create(logged_in_client, url=f"https://example.com/jobs/fb-applied-{i}")["job_id"]
+        logged_in_client.patch(f"/api/jobs/{jid}/status", json={"status": "applied"})
+        ids.append(jid)
+
+    feedback = logged_in_client.get("/api/jobs/feedback", params={"limit_applied": 2}).json()
+    assert len(feedback["applied"]) == 2
+    assert len(feedback["rejected"]) == 0
+
+
+def test_feedback_truncates_description_server_side(logged_in_client):
+    job_id = _create(
+        logged_in_client, url="https://example.com/jobs/fb-long-desc", description="x" * 3000,
+    )["job_id"]
+    logged_in_client.patch(f"/api/jobs/{job_id}/status", json={"status": "applied"})
+
+    feedback = logged_in_client.get("/api/jobs/feedback").json()
+    assert len(feedback["applied"][0]["description"]) == 1500
+
+
 def test_query_outcome_stats(logged_in_client):
     job_id = _create(logged_in_client, search_query="python dev")["job_id"]
     logged_in_client.patch(f"/api/jobs/{job_id}/status", json={"status": "applied"})
