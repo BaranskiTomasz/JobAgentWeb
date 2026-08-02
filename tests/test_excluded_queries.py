@@ -43,3 +43,17 @@ def test_isolated_per_user(logged_in_client, other_logged_in_client):
         "source": "linkedin", "search_query": "junior java", "reason": "bad",
     })
     assert other_logged_in_client.get("/api/excluded-search-queries").json() == []
+
+
+def test_reinstate_nonexistent_404s(logged_in_client):
+    resp = logged_in_client.post("/api/excluded-search-queries/999999/reinstate")
+    assert resp.status_code == 404
+
+
+def test_reinstate_another_users_exclusion_404s(logged_in_client, other_logged_in_client):
+    other_logged_in_client.post("/api/excluded-search-queries", json={
+        "source": "linkedin", "search_query": "junior java", "reason": "bad",
+    })
+    theirs = other_logged_in_client.get("/api/excluded-search-queries").json()[0]
+    resp = logged_in_client.post(f"/api/excluded-search-queries/{theirs['id']}/reinstate")
+    assert resp.status_code == 404

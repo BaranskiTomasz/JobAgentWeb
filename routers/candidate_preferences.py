@@ -32,20 +32,24 @@ def create(body: CandidatePreferencesCreate, user: dict = Depends(get_current_us
 
 @router.post("/{pref_id}/activate")
 def activate(pref_id: int, user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    candidate_preferences_repo.set_active(conn, user["id"], pref_id)
+    if not candidate_preferences_repo.set_active(conn, user["id"], pref_id):
+        raise HTTPException(status_code=404, detail="Candidate preferences not found")
     return {"ok": True}
 
 
 @router.patch("/{pref_id}")
 def update(pref_id: int, body: CandidatePreferencesUpdate, user: dict = Depends(get_current_user), conn=Depends(get_db)):
     try:
-        candidate_preferences_repo.update(conn, user["id"], pref_id, body.fields)
+        found = candidate_preferences_repo.update(conn, user["id"], pref_id, body.fields)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if not found:
+        raise HTTPException(status_code=404, detail="Candidate preferences not found")
     return {"ok": True}
 
 
 @router.delete("/{pref_id}")
 def delete(pref_id: int, user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    candidate_preferences_repo.delete(conn, user["id"], pref_id)
+    if not candidate_preferences_repo.delete(conn, user["id"], pref_id):
+        raise HTTPException(status_code=404, detail="Candidate preferences not found")
     return {"ok": True}

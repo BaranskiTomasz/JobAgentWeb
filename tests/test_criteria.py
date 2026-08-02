@@ -73,3 +73,20 @@ def test_delete_by_type_is_scoped_to_the_caller(logged_in_client, other_logged_i
 def test_delete_by_type_with_no_matches_is_a_noop(logged_in_client):
     resp = logged_in_client.delete("/api/criteria/by-type/title")
     assert resp.json()["deleted"] == 0
+
+
+def test_toggle_nonexistent_404s(logged_in_client):
+    resp = logged_in_client.patch("/api/criteria/999999", json={"is_active": False})
+    assert resp.status_code == 404
+
+
+def test_toggle_another_users_criteria_404s(logged_in_client, other_logged_in_client):
+    other_logged_in_client.post("/api/criteria", json={"type": "required", "value": "Python"})
+    theirs = other_logged_in_client.get("/api/criteria").json()[0]
+    resp = logged_in_client.patch(f"/api/criteria/{theirs['id']}", json={"is_active": False})
+    assert resp.status_code == 404
+
+
+def test_delete_nonexistent_404s(logged_in_client):
+    resp = logged_in_client.delete("/api/criteria/999999")
+    assert resp.status_code == 404

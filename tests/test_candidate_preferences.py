@@ -44,3 +44,29 @@ def test_delete(logged_in_client):
 def test_isolated_per_user(logged_in_client, other_logged_in_client):
     logged_in_client.post("/api/candidate-preferences", json={"fields": {}})
     assert other_logged_in_client.get("/api/candidate-preferences").json() == []
+
+
+def test_activate_nonexistent_404s_and_leaves_active_untouched(logged_in_client):
+    # Regression: set_active() used to deactivate the current row before
+    # checking the target id existed — a bad id left zero active rows
+    # while the API reported {"ok": true}.
+    pref_id = logged_in_client.post("/api/candidate-preferences", json={"fields": {}}).json()["id"]
+    resp = logged_in_client.post("/api/candidate-preferences/999999/activate")
+    assert resp.status_code == 404
+    assert logged_in_client.get("/api/candidate-preferences/active").json()["id"] == pref_id
+
+
+def test_update_nonexistent_404s(logged_in_client):
+    resp = logged_in_client.patch("/api/candidate-preferences/999999", json={"fields": {"salary_min": 1}})
+    assert resp.status_code == 404
+
+
+def test_update_another_users_preferences_404s(logged_in_client, other_logged_in_client):
+    theirs = other_logged_in_client.post("/api/candidate-preferences", json={"fields": {}}).json()["id"]
+    resp = logged_in_client.patch(f"/api/candidate-preferences/{theirs}", json={"fields": {"salary_min": 1}})
+    assert resp.status_code == 404
+
+
+def test_delete_nonexistent_404s(logged_in_client):
+    resp = logged_in_client.delete("/api/candidate-preferences/999999")
+    assert resp.status_code == 404

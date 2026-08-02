@@ -93,6 +93,47 @@ def test_login_success_grants_access(client, user):
     assert client.get("/api/jobs/stats").status_code == 200
 
 
+def test_login_strips_whitespace_from_username(client, user):
+    # Regression: register_submit stripped the username before storing/checking,
+    # but login_submit only stripped it for the rate-limit key and passed the
+    # raw value to get_by_username — a stray leading/trailing space (easy to
+    # type by accident) meant a real account couldn't log in.
+    resp = client.post("/login", data={"username": f"  {user['username']}  ", "password": user["password"]})
+    assert resp.status_code in (200, 303)
+    assert client.get("/api/jobs/stats").status_code == 200
+
+
+def test_concurrent_registration_of_the_same_username_does_not_500(client):
+    # Regression: two concurrent registrations for the same username both pass
+    # the get_by_username pre-check; the second INSERT used to trip the unique
+    # constraint and raise an uncaught IntegrityError (500) instead of the
+    # normal "That username is already taken" response.
+    import threading
+
+    from starlette.testclient import TestClient
+
+    from main import app
+
+    results = []
+    barrier = threading.Barrier(2)
+
+    def _register():
+        with TestClient(app) as c:
+            barrier.wait(timeout=5)
+            resp = c.post("/register", data={
+                "username": "raceuser", "password": "goodpassword", "password_confirm": "goodpassword",
+                "invite_code": "test-invite-code",
+            })
+            results.append(resp.status_code)
+
+    t1 = threading.Thread(target=_register)
+    t2 = threading.Thread(target=_register)
+    t1.start(); t2.start()
+    t1.join(); t2.join()
+
+    assert sorted(results) == [200, 400] or sorted(results) == [303, 400]
+
+
 def test_protected_route_401_without_session(client):
     assert client.get("/api/jobs").status_code == 401
     assert client.get("/api/jobs/stats").status_code == 401

@@ -39,17 +39,19 @@ def insert(conn, user_id: int, type_: str, value: str) -> None:
     )
 
 
-def toggle(conn, user_id: int, criteria_id: int, is_active: bool) -> None:
+def toggle(conn, user_id: int, criteria_id: int, is_active: bool) -> bool:
     cur = conn.cursor()
     cur.execute(
         "UPDATE criteria SET is_active = %s WHERE user_id = %s AND id = %s",
         (1 if is_active else 0, user_id, criteria_id),
     )
+    return cur.rowcount > 0
 
 
-def delete(conn, user_id: int, criteria_id: int) -> None:
+def delete(conn, user_id: int, criteria_id: int) -> bool:
     cur = conn.cursor()
     cur.execute("DELETE FROM criteria WHERE user_id = %s AND id = %s", (user_id, criteria_id))
+    return cur.rowcount > 0
 
 
 def delete_by_type(conn, user_id: int, type_: str) -> int:

@@ -431,11 +431,11 @@ function _renderBadges(j, s) {
   if (work) tags.push(`<span class="b key${on('work=' + work)}" onclick="toggleBadgeFilter('work=${work}')"><span class="dotmark"></span>${_WORK_LABEL[work]}</span>`);
 
   if (s && s.seniority && s.seniority !== 'unknown')
-    tags.push(`<span class="b${on('seniority=' + s.seniority)}" onclick="toggleBadgeFilter('seniority=${s.seniority}')">${cap(s.seniority)}</span>`);
+    tags.push(`<span class="b${on('seniority=' + s.seniority)}" onclick="toggleBadgeFilter('${escJs('seniority=' + s.seniority)}')">${esc(cap(s.seniority))}</span>`);
   if (s && s.company_type && s.company_type !== 'unknown')
-    tags.push(`<span class="b${on('ctype=' + s.company_type)}" onclick="toggleBadgeFilter('ctype=${s.company_type}')">${cap(s.company_type)}</span>`);
+    tags.push(`<span class="b${on('ctype=' + s.company_type)}" onclick="toggleBadgeFilter('${escJs('ctype=' + s.company_type)}')">${esc(cap(s.company_type))}</span>`);
   if (s && s.product_vs_outsourcing && s.product_vs_outsourcing !== 'unknown')
-    tags.push(`<span class="b${on('pvo=' + s.product_vs_outsourcing)}" onclick="toggleBadgeFilter('pvo=${s.product_vs_outsourcing}')">${cap(s.product_vs_outsourcing)}</span>`);
+    tags.push(`<span class="b${on('pvo=' + s.product_vs_outsourcing)}" onclick="toggleBadgeFilter('${escJs('pvo=' + s.product_vs_outsourcing)}')">${esc(cap(s.product_vs_outsourcing))}</span>`);
   (s && s.stack || []).slice(0, 6).forEach(t => {
     const key = 'stack=' + t.toLowerCase();
     tags.push(`<span class="b stack${on(key)}" onclick="toggleBadgeFilter('${escJs(key)}')">${esc(t)}</span>`);

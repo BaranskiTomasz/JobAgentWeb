@@ -32,9 +32,10 @@ def get_all(conn, user_id: int) -> list[dict]:
     return [dict(r) for r in cur.fetchall()]
 
 
-def reinstate(conn, user_id: int, excluded_id: int) -> None:
+def reinstate(conn, user_id: int, excluded_id: int) -> bool:
     cur = conn.cursor()
     cur.execute(
         "DELETE FROM excluded_search_queries WHERE user_id = %s AND id = %s",
         (user_id, excluded_id),
     )
+    return cur.rowcount > 0

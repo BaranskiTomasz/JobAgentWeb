@@ -71,18 +71,25 @@ def list_all(conn, user_id: int) -> list[dict]:
     return [_deserialize(r) for r in cur.fetchall()]
 
 
-def set_active(conn, user_id: int, pref_id: int) -> None:
+def set_active(conn, user_id: int, pref_id: int) -> bool:
+    """Returns False (leaving the current active row untouched) if pref_id
+    doesn't exist or doesn't belong to this user — checked before the
+    deactivate step runs, so a bad id never wipes the real active row."""
     cur = conn.cursor()
+    cur.execute("SELECT 1 FROM candidate_preferences WHERE user_id = %s AND id = %s", (user_id, pref_id))
+    if cur.fetchone() is None:
+        return False
     cur.execute("UPDATE candidate_preferences SET is_active = 0 WHERE user_id = %s", (user_id,))
     cur.execute(
         "UPDATE candidate_preferences SET is_active = 1 WHERE user_id = %s AND id = %s",
         (user_id, pref_id),
     )
+    return True
 
 
-def update(conn, user_id: int, pref_id: int, fields: dict) -> None:
+def update(conn, user_id: int, pref_id: int, fields: dict) -> bool:
     if not fields:
-        return
+        return True  # nothing to update is not an error
     data = _serialize(fields)
     set_clause = ", ".join(f"{k} = %s" for k in data)
     cur = conn.cursor()
@@ -90,8 +97,10 @@ def update(conn, user_id: int, pref_id: int, fields: dict) -> None:
         f"UPDATE candidate_preferences SET {set_clause} WHERE user_id = %s AND id = %s",
         [*data.values(), user_id, pref_id],
     )
+    return cur.rowcount > 0
 
 
-def delete(conn, user_id: int, pref_id: int) -> None:
+def delete(conn, user_id: int, pref_id: int) -> bool:
     cur = conn.cursor()
     cur.execute("DELETE FROM candidate_preferences WHERE user_id = %s AND id = %s", (user_id, pref_id))
+    return cur.rowcount > 0

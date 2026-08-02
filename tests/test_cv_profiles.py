@@ -35,6 +35,36 @@ def test_no_active_profile_404(logged_in_client):
     assert resp.status_code == 404
 
 
+def test_activate_nonexistent_profile_404s_and_leaves_active_untouched(logged_in_client):
+    # Regression: set_active() used to unconditionally deactivate the current
+    # active row before checking whether the target id existed — a bad id
+    # silently left the user with zero active profiles while reporting {"ok": true}.
+    profile_id = logged_in_client.post("/api/cv-profiles", json={
+        "filename": "a.pdf", "raw_text": "A", "parsed": {},
+    }).json()["id"]
+
+    resp = logged_in_client.post("/api/cv-profiles/999999/activate")
+    assert resp.status_code == 404
+
+    active = logged_in_client.get("/api/cv-profiles/active").json()
+    assert active["id"] == profile_id
+
+
+def test_activate_another_users_profile_404s_and_leaves_active_untouched(logged_in_client, other_logged_in_client):
+    mine = logged_in_client.post("/api/cv-profiles", json={
+        "filename": "mine.pdf", "raw_text": "Mine", "parsed": {},
+    }).json()["id"]
+    theirs = other_logged_in_client.post("/api/cv-profiles", json={
+        "filename": "theirs.pdf", "raw_text": "Theirs", "parsed": {},
+    }).json()["id"]
+
+    resp = logged_in_client.post(f"/api/cv-profiles/{theirs}/activate")
+    assert resp.status_code == 404
+
+    active = logged_in_client.get("/api/cv-profiles/active").json()
+    assert active["id"] == mine
+
+
 def test_cv_profiles_isolated_per_user(logged_in_client, other_logged_in_client):
     logged_in_client.post("/api/cv-profiles", json={"filename": "a.pdf", "raw_text": "A", "parsed": {}})
     assert other_logged_in_client.get("/api/cv-profiles").json() == []

@@ -29,13 +29,15 @@ def create_criteria(body: CriteriaCreate, user: dict = Depends(get_current_user)
 
 @router.patch("/{criteria_id}")
 def toggle_criteria(criteria_id: int, body: CriteriaToggle, user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    criteria_repo.toggle(conn, user["id"], criteria_id, body.is_active)
+    if not criteria_repo.toggle(conn, user["id"], criteria_id, body.is_active):
+        raise HTTPException(status_code=404, detail="Criteria not found")
     return {"ok": True}
 
 
 @router.delete("/{criteria_id}")
 def delete_criteria(criteria_id: int, user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    criteria_repo.delete(conn, user["id"], criteria_id)
+    if not criteria_repo.delete(conn, user["id"], criteria_id):
+        raise HTTPException(status_code=404, detail="Criteria not found")
     return {"ok": True}
 
 

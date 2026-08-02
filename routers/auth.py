@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import psycopg2
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -23,7 +24,8 @@ def login_page(request: Request):
 
 @router.post("/login", response_class=HTMLResponse)
 def login_submit(request: Request, username: str = Form(...), password: str = Form(...), conn=Depends(get_db)):
-    rate_limit.enforce(request, "login", key=username.strip().lower())
+    username = username.strip()
+    rate_limit.enforce(request, "login", key=username.lower())
     user = users_repo.get_by_username(conn, username)
     # Always call verify_password, even for an unknown username — checking against
     # DUMMY_PASSWORD_HASH keeps the response time the same either way, so timing
@@ -73,7 +75,17 @@ def register_submit(
     if error:
         return templates.TemplateResponse(request, "register.html", {"error": error}, status_code=400)
 
-    user_id = users_repo.create(conn, username, hash_password(password))
+    try:
+        user_id = users_repo.create(conn, username, hash_password(password))
+    except psycopg2.errors.UniqueViolation:
+        # Two concurrent registrations for the same username both pass the
+        # get_by_username check above; the second INSERT trips the unique
+        # constraint instead. get_db()'s commit would fail on this aborted
+        # transaction otherwise, so roll back explicitly before responding.
+        conn.rollback()
+        return templates.TemplateResponse(
+            request, "register.html", {"error": "That username is already taken."}, status_code=400,
+        )
     request.session["user_id"] = user_id
     request.session["session_epoch"] = 0  # matches the users.session_epoch column default
     return RedirectResponse("/", status_code=303)

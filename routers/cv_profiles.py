@@ -29,5 +29,6 @@ def create_profile(body: CVProfileCreate, user: dict = Depends(get_current_user)
 
 @router.post("/{profile_id}/activate")
 def activate_profile(profile_id: int, user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    cv_profiles_repo.set_active(conn, user["id"], profile_id)
+    if not cv_profiles_repo.set_active(conn, user["id"], profile_id):
+        raise HTTPException(status_code=404, detail="CV profile not found")
     return {"ok": True}
