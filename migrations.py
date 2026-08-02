@@ -209,11 +209,26 @@ _NEW_COLUMNS = [
 ]
 
 
+# Arbitrary id for a session-level advisory lock (not the 2-arg per-user form
+# sessions_repo.py uses — a different lock space entirely, no collision risk).
+# uvicorn runs multiple worker processes, each calling init_db() on startup;
+# without this, two workers running "CREATE INDEX IF NOT EXISTS" concurrently
+# can still hit a duplicate-key error on the underlying catalog entry, since
+# the existence check and the create aren't atomic across separate sessions —
+# observed in production crashing a worker (auto-restarted, but avoidable).
+_MIGRATION_LOCK_ID = 913377
+
+
 def init_db(conn) -> None:
     cur = conn.cursor()
-    cur.execute(_SCHEMA)
-    conn.commit()
+    cur.execute("SELECT pg_advisory_lock(%s)", (_MIGRATION_LOCK_ID,))
+    try:
+        cur.execute(_SCHEMA)
+        conn.commit()
 
-    for table, column, type_sql in _NEW_COLUMNS:
-        cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {type_sql}")
+        for table, column, type_sql in _NEW_COLUMNS:
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {type_sql}")
+            conn.commit()
+    finally:
+        cur.execute("SELECT pg_advisory_unlock(%s)", (_MIGRATION_LOCK_ID,))
         conn.commit()
