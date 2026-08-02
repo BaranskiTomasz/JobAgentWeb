@@ -66,14 +66,14 @@
       <div class="panel-label">
         <span class="lbl-with-info">Calibration
           <span class="info"><button type="button" class="info-btn">?</button>
-            <span class="tip">How well the AI ranking matches your actual decisions. <b>Precision@5/@10</b>: of the top-ranked jobs you've since decided on, what fraction were good calls (applied, not rejected). Click for the full report.</span>
+            <span class="tip">How well the AI ranking matches your actual decisions. <b>Apply-rate by rank bucket</b>: of the jobs you've decided on at each rank range, what fraction you applied to — should fall as rank worsens. Click for the full report.</span>
           </span>
         </span>
         <span class="open-cue">Details →</span>
       </div>
       <div class="calib-metrics">
-        <div class="m"><span class="mv" id="calib-p5">—</span><span class="ml">Precision@5</span></div>
-        <div class="m"><span class="mv" id="calib-p10">—</span><span class="ml">Precision@10</span></div>
+        <div class="m"><span class="mv" id="calib-b1">—</span><span class="ml">Rank 1-5</span></div>
+        <div class="m"><span class="mv" id="calib-b2">—</span><span class="ml">Rank 6-10</span></div>
       </div>
       <div class="calib-div"><span class="tick"></span><span id="calib-div-count">—</span> divergence cases found</div>
     </div>

@@ -443,6 +443,7 @@ h1,h2,h3 { text-wrap: balance; }
 .eval-metric { background: var(--paper-sunk); border: 1px solid var(--line-soft); border-radius: 11px; padding: 13px 14px; }
 .eval-metric .ev { font-family: var(--font-mono); font-size: 1.6rem; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .eval-metric .el { font-size: 0.68rem; color: var(--ink-faint); margin-top: 6px; letter-spacing: 0.04em; }
+.eval-ranked-line { font-size: 0.72rem; color: var(--ink-faint); margin: -8px 0 14px; }
 .calib-explain { font-size: 0.82rem; color: var(--ink-soft); line-height: 1.55; background: var(--signal-soft); border: 1px solid color-mix(in srgb, var(--signal) 24%, transparent); border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; }
 
 .wa-gate { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 18px; }

@@ -193,6 +193,14 @@ async function loadStats() {
   loadCost();
 }
 
+// Looks up one bucket's apply-rate by its range label. apply_rate_by_bucket is
+// absent until JobAgentWeb is redeployed with it (see routers/evaluation.py) —
+// this null-guards the same way the old precision_at_5/10 lookups always did.
+function _bucketRate(data, range) {
+  const b = (data.apply_rate_by_bucket || []).find(x => x.range === range);
+  return b && b.apply_rate != null ? Math.round(b.apply_rate * 100) + '%' : '—';
+}
+
 async function loadCalibSummary() {
   let d;
   try {
@@ -202,8 +210,8 @@ async function loadCalibSummary() {
   } catch {
     return;
   }
-  document.getElementById('calib-p5').textContent  = d.precision_at_5  != null ? Math.round(d.precision_at_5 * 100) + '%' : '—';
-  document.getElementById('calib-p10').textContent = d.precision_at_10 != null ? Math.round(d.precision_at_10 * 100) + '%' : '—';
+  document.getElementById('calib-b1').textContent = _bucketRate(d, '1-5');
+  document.getElementById('calib-b2').textContent = _bucketRate(d, '6-10');
   document.getElementById('calib-div-count').textContent = (d.divergence_cases || []).length;
 }
 
@@ -337,13 +345,14 @@ async function openEvalModal() {
 
   document.getElementById('eval-body').innerHTML = `
     <div class="eval-metrics">
-      <div class="eval-metric"><div class="ev">${data.precision_at_5 != null ? Math.round(data.precision_at_5 * 100) + '%' : '—'}</div><div class="el">PRECISION@5</div></div>
-      <div class="eval-metric"><div class="ev">${data.precision_at_10 != null ? Math.round(data.precision_at_10 * 100) + '%' : '—'}</div><div class="el">PRECISION@10</div></div>
-      <div class="eval-metric"><div class="ev">${data.total_ranked ?? '—'}</div><div class="el">RANKED</div></div>
-      <div class="eval-metric"><div class="ev">${cases.length}</div><div class="el">DIVERGENCES</div></div>
+      <div class="eval-metric"><div class="ev">${_bucketRate(data, '1-5')}</div><div class="el">RANK 1-5</div></div>
+      <div class="eval-metric"><div class="ev">${_bucketRate(data, '6-10')}</div><div class="el">RANK 6-10</div></div>
+      <div class="eval-metric"><div class="ev">${_bucketRate(data, '11-15')}</div><div class="el">RANK 11-15</div></div>
+      <div class="eval-metric"><div class="ev">${_bucketRate(data, '16-20')}</div><div class="el">RANK 16-20</div></div>
     </div>
-    <p class="calib-explain"><b>Precision@K</b> looks at your top-K AI-ranked jobs that you've actually <i>decided</i> on (applied, rejected, or auto-rejected) — not the top-K overall, since only a decided job can confirm whether the ranking was right. "Reviewed" doesn't count as a decision here: it means you looked but haven't committed either way, so it's left out of the count and the score entirely.
-    <br><br><b>Example:</b> your 10 highest-ranked jobs include 8 you've decided on — 6 applied, 2 rejected — and 2 still sitting as new/reviewed. Precision@10 = 6/8 = <b>75%</b>. The 2 undecided ones simply aren't counted yet; they'll factor in once you act on them.
+    <p class="eval-ranked-line">${data.total_ranked ?? 0} jobs ranked total &middot; ${cases.length} divergence cases</p>
+    <p class="calib-explain"><b>Apply-rate by rank bucket</b> looks at every job you've actually <i>decided</i> on (applied, rejected, or auto-rejected) and groups it by the listwise rank it was given, then shows what fraction of each group you applied to. Unlike a fixed top-K snapshot, this uses your <i>entire</i> decision history at each rank range, so it sharpens as you decide on more jobs instead of staying pinned to the same handful. "Reviewed" doesn't count as a decision: it means you looked but haven't committed either way, so it's left out entirely.
+    <br><br>A well-calibrated ranking shows apply-rate falling as rank worsens (highest at 1-5, lowest at 16-20). A flat or inverted pattern means the ranking isn't actually tracking what you apply to.
     <br><br>A <b>divergence case</b> flags a specific miss: a job ranked in the top 5 that you rejected (the model overrated it), or ranked #16+ that you applied to anyway (the model underrated it). These are the same cases JobAgent feeds back into its own scoring as calibration examples, so the model doesn't repeat the same mistake.</p>
 
     <div class="wa-gate ${waMeetsGate ? 'met' : ''}">
