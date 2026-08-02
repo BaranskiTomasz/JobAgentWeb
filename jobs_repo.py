@@ -389,9 +389,13 @@ def get_all_feedback(
 ) -> tuple[list[dict], list[dict]]:
     """Most-recent-first, optionally capped, with descriptions truncated to 1500
     chars server-side (_job_line() in preference_agent/runner.py only ever uses
-    the first 1500 chars of a description anyway — no point shipping the rest)."""
+    the first 1500 chars of a description anyway — no point shipping the rest).
+    Includes decided_at (ujs.updated_at) so the distiller can tell a 6-month-old
+    decision from yesterday's — previously omitted, so a reversed preference had
+    no way to be expressed as "reversed" rather than just contradictory."""
     cur = dict_cursor(conn)
-    sql = """SELECT jp.title, jp.company, jp.location, LEFT(jp.description, 1500) AS description, ujs.score_reason
+    sql = """SELECT jp.title, jp.company, jp.location, LEFT(jp.description, 1500) AS description,
+                     ujs.score_reason, ujs.updated_at AS decided_at
              FROM job_postings jp JOIN user_job_states ujs ON ujs.job_id = jp.id
              WHERE ujs.user_id = %s AND ujs.status = 'applied' ORDER BY ujs.updated_at DESC"""
     params = [user_id]
@@ -402,7 +406,7 @@ def get_all_feedback(
     applied = [dict(r) for r in cur.fetchall()]
 
     sql = """SELECT jp.title, jp.company, jp.location, LEFT(jp.description, 1500) AS description,
-                     ujs.rejection_reason, ujs.score_reason
+                     ujs.rejection_reason, ujs.score_reason, ujs.updated_at AS decided_at
               FROM job_postings jp JOIN user_job_states ujs ON ujs.job_id = jp.id
               WHERE ujs.user_id = %s AND ujs.status = 'rejected' ORDER BY ujs.updated_at DESC"""
     params = [user_id]

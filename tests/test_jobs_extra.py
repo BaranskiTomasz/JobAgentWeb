@@ -142,6 +142,20 @@ def test_feedback_respects_limit_params(logged_in_client):
     assert len(feedback["rejected"]) == 0
 
 
+def test_feedback_includes_decided_at(logged_in_client):
+    # Regression: applied/rejected examples had no timestamp at all, so
+    # preference_agent/runner.py's distiller couldn't tell a 6-month-old
+    # decision from yesterday's — no way to express a reversed preference.
+    applied_id = _create(logged_in_client, url="https://example.com/jobs/decided-a")["job_id"]
+    rejected_id = _create(logged_in_client, url="https://example.com/jobs/decided-b")["job_id"]
+    logged_in_client.patch(f"/api/jobs/{applied_id}/status", json={"status": "applied"})
+    logged_in_client.patch(f"/api/jobs/{rejected_id}/status", json={"status": "rejected", "rejection_reason": "nope"})
+
+    feedback = logged_in_client.get("/api/jobs/feedback").json()
+    assert feedback["applied"][0]["decided_at"]
+    assert feedback["rejected"][0]["decided_at"]
+
+
 def test_feedback_truncates_description_server_side(logged_in_client):
     job_id = _create(
         logged_in_client, url="https://example.com/jobs/fb-long-desc", description="x" * 3000,
