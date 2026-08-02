@@ -16,6 +16,13 @@ import config
 _WINDOW_SECONDS = 60
 _MAX_ATTEMPTS = 10
 
+# Fallback sweep threshold — an abandoned key (a username tried exactly once,
+# e.g. during enumeration) has no request left to prune it via enforce()'s own
+# per-key check below, so it would otherwise sit at zero attempts forever in a
+# long-lived worker process. Only scanned once the dict actually grows large,
+# so this costs nothing under normal, bounded traffic.
+_MAX_TRACKED_KEYS = 10_000
+
 _lock = threading.Lock()
 _attempts: dict[str, deque] = defaultdict(deque)
 
@@ -42,3 +49,11 @@ def enforce(request: Request, bucket: str, key: str | None = None) -> None:
         if len(hits) >= _MAX_ATTEMPTS:
             raise HTTPException(status_code=429, detail="Too many attempts — try again in a minute.")
         hits.append(now)
+        if len(_attempts) > _MAX_TRACKED_KEYS:
+            _evict_stale_keys(now)
+
+
+def _evict_stale_keys(now: float) -> None:
+    stale = [k for k, hits in _attempts.items() if not hits or now - hits[-1] > _WINDOW_SECONDS]
+    for k in stale:
+        del _attempts[k]

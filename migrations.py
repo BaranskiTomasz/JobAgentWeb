@@ -69,14 +69,16 @@ _SCHEMA = """
     );
 
     CREATE TABLE IF NOT EXISTS sessions (
-        id          INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        started_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        finished_at TIMESTAMP,
-        jobs_found  INTEGER DEFAULT 0,
-        jobs_scored INTEGER DEFAULT 0,
-        status      TEXT DEFAULT 'running'
+        id           INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        started_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        finished_at  TIMESTAMP,
+        jobs_found   INTEGER DEFAULT 0,
+        jobs_scored  INTEGER DEFAULT 0,
+        status       TEXT DEFAULT 'running'
     );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_status_started ON sessions(user_id, status, started_at);
 
     CREATE TABLE IF NOT EXISTS cv_profiles (
         id         INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -129,6 +131,8 @@ _SCHEMA = """
         breakdown        TEXT NOT NULL
     );
 
+    CREATE INDEX IF NOT EXISTS idx_cost_summaries_user_started ON cost_summaries(user_id, started_at DESC);
+
     CREATE TABLE IF NOT EXISTS search_stats (
         id           INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -142,6 +146,7 @@ _SCHEMA = """
     );
 
     CREATE INDEX IF NOT EXISTS idx_search_stats_query ON search_stats(source, search_query);
+    CREATE INDEX IF NOT EXISTS idx_search_stats_user_source_searched ON search_stats(user_id, source, searched_at);
 
     CREATE TABLE IF NOT EXISTS excluded_search_queries (
         id           INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -189,12 +194,18 @@ _SCHEMA = """
     );
 
     CREATE INDEX IF NOT EXISTS idx_dismissed_score_items_job ON dismissed_score_items(job_id);
+    CREATE INDEX IF NOT EXISTS idx_dismissed_score_items_user_id ON dismissed_score_items(user_id, id DESC);
 """
 
 _NEW_COLUMNS = [
     ("preference_profiles", "content_format", "TEXT DEFAULT 'text'"),
     ("preference_profiles", "dismissed_count", "INTEGER DEFAULT 0"),
     ("users", "session_epoch", "INTEGER DEFAULT 0"),
+    # Set only when a collector stage actually finishes successfully — distinct from
+    # finished_at, which every session gets regardless of run type (ranking, rescoring,
+    # etc). _days_since_last_run() must only advance past a real collection, or any
+    # other pipeline action silently narrows the next collection's search window.
+    ("sessions", "collected_at", "TIMESTAMP"),
 ]
 
 

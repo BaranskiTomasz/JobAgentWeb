@@ -43,6 +43,17 @@ def last_finished(user: dict = Depends(get_current_user), conn=Depends(get_db)):
     return {"finished_at": sessions_repo.get_last_finished_at(conn, user["id"])}
 
 
+@router.post("/{session_id}/mark-collected")
+def mark_collected(session_id: int, user: dict = Depends(get_current_user), conn=Depends(get_db)):
+    sessions_repo.mark_collected(conn, user["id"], session_id)
+    return {"ok": True}
+
+
+@router.get("/last-collected")
+def last_collected(user: dict = Depends(get_current_user), conn=Depends(get_db)):
+    return {"collected_at": sessions_repo.get_last_collected_at(conn, user["id"])}
+
+
 @router.get("/latest")
 def latest(user: dict = Depends(get_current_user), conn=Depends(get_db)):
     session = sessions_repo.get_latest(conn, user["id"])

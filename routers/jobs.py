@@ -58,6 +58,11 @@ def missing_descriptions(user: dict = Depends(get_current_user), conn=Depends(ge
     return jobs_repo.get_missing_descriptions(conn, user["id"])
 
 
+@router.get("/missing-structured-data", response_model=list[JobOut])
+def missing_structured_data(user: dict = Depends(get_current_user), conn=Depends(get_db)):
+    return jobs_repo.get_missing_structured_data(conn, user["id"])
+
+
 @router.get("/new", response_model=list[JobOut])
 def get_new(user: dict = Depends(get_current_user), conn=Depends(get_db)):
     return jobs_repo.get_new(conn, user["id"])

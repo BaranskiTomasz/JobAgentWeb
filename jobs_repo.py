@@ -298,6 +298,20 @@ def get_missing_descriptions(conn, user_id: int) -> list[dict]:
     return [dict(r) for r in cur.fetchall()]
 
 
+def get_missing_structured_data(conn, user_id: int) -> list[dict]:
+    """This user's jobs that have a description but haven't been through
+    structured extraction yet — candidates for scripts/extract_jobs.py's
+    backfill. Filtered server-side instead of shipping the whole lifetime
+    pool for the caller to filter client-side."""
+    cur = dict_cursor(conn)
+    sql = f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
+              WHERE ujs.user_id = %s AND jp.description IS NOT NULL AND jp.description != ''
+              AND jp.structured_data IS NULL
+              ORDER BY jp.created_at DESC"""
+    cur.execute(sql, (user_id,))
+    return [_row_to_job(r) for r in cur.fetchall()]
+
+
 def update_description(conn, job_id: str, description: str) -> None:
     """Shared, not user-scoped, write-once — same reasoning as update_structured_data."""
     cur = conn.cursor()
@@ -513,22 +527,55 @@ def get_query_outcome_stats(conn, user_id: int, source: str) -> list[dict]:
     return [dict(r) for r in cur.fetchall()]
 
 
-def get_ranked(conn, user_id: int, statuses: list[str]) -> list[dict]:
+def get_ranked(conn, user_id: int, statuses: list[str], limit: int | None = None) -> list[dict]:
     """Ranked jobs (any of the given statuses) ordered by listwise_rank — the
     calibration report's source of truth for precision@K / divergence cases.
     listwise_rank is only ever 1-20 and freezes the moment a job is decided
     (re-ranking only touches the live 'new' pool), so after enough decisions many
     rows share the same rank; the updated_at tiebreak surfaces the most recent
-    ones first instead of an arbitrary (effectively oldest-first) tie order."""
+    ones first instead of an arbitrary (effectively oldest-first) tie order.
+
+    limit is pushed into the query (not applied by slicing the result) so
+    precision@K's SELECT only ever pulls K rows instead of every ranked job
+    the account has ever decided on."""
     cur = dict_cursor(conn)
     placeholders = ",".join(["%s"] * len(statuses))
+    sql = f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
+              WHERE ujs.user_id = %s AND ujs.listwise_rank IS NOT NULL AND ujs.status IN ({placeholders})
+              ORDER BY ujs.listwise_rank ASC, ujs.updated_at DESC"""
+    params: list = [user_id, *statuses]
+    if limit is not None:
+        sql += " LIMIT %s"
+        params.append(limit)
+    cur.execute(sql, params)
+    return [_row_to_job(r) for r in cur.fetchall()]
+
+
+def get_divergence_cases(conn, user_id: int, limit: int = 50) -> list[dict]:
+    """Ranked jobs where the ranking and the user's decision strongly disagree:
+    rank <=5 but rejected (model overrated it), or rank >=16 but applied (model
+    underrated it) — the strongest learning signal for the preference distiller.
+    Filtered and capped in SQL, most-recent-first, instead of fetching every
+    ever-decided ranked job and discarding most of it in Python: that full scan
+    only grows with account age, since listwise_rank freezes at decision time."""
+    cur = dict_cursor(conn)
     cur.execute(
         f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
-            WHERE ujs.user_id = %s AND ujs.listwise_rank IS NOT NULL AND ujs.status IN ({placeholders})
-            ORDER BY ujs.listwise_rank ASC, ujs.updated_at DESC""",
-        [user_id, *statuses],
+            WHERE ujs.user_id = %s AND ujs.listwise_rank IS NOT NULL
+            AND (
+                (ujs.listwise_rank <= 5 AND ujs.status = 'rejected')
+                OR (ujs.listwise_rank >= 16 AND ujs.status = 'applied')
+            )
+            ORDER BY ujs.updated_at DESC
+            LIMIT %s""",
+        (user_id, limit),
     )
-    return [_row_to_job(r) for r in cur.fetchall()]
+    cases = []
+    for r in cur.fetchall():
+        row = _row_to_job(r)
+        row["divergence_type"] = "false_positive" if row["listwise_rank"] <= 5 else "false_negative"
+        cases.append(row)
+    return cases
 
 
 def count_ranked(conn, user_id: int) -> int:

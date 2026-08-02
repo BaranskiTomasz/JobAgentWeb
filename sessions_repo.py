@@ -70,6 +70,34 @@ def get_last_finished_at(conn, user_id: int):
     return row["finished_at"] if row else None
 
 
+def mark_collected(conn, user_id: int, session_id: int) -> None:
+    """Records that this session's collector stage actually finished
+    successfully — distinct from finish()'s finished_at, which every session
+    gets regardless of whether it ever collected anything (ranking, rescoring,
+    etc never do). See get_last_collected_at()."""
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE sessions SET collected_at = (NOW() AT TIME ZONE 'utc') WHERE user_id = %s AND id = %s",
+        (user_id, session_id),
+    )
+
+
+def get_last_collected_at(conn, user_id: int):
+    """What _days_since_last_run() should actually read: the last time
+    collection genuinely succeeded, not just the last time any pipeline
+    session finished. Using get_last_finished_at() here would silently narrow
+    the next collection's search window every time a non-collector action
+    (ranking, rescoring, re-evaluating) runs after the last real collection."""
+    cur = dict_cursor(conn)
+    cur.execute(
+        "SELECT collected_at FROM sessions WHERE user_id = %s AND collected_at IS NOT NULL "
+        "ORDER BY collected_at DESC LIMIT 1",
+        (user_id,),
+    )
+    row = cur.fetchone()
+    return row["collected_at"] if row else None
+
+
 def get_latest(conn, user_id: int) -> dict | None:
     cur = dict_cursor(conn)
     cur.execute(

@@ -61,6 +61,56 @@ def test_last_finished_ignores_cancelled_sessions(user, logged_in_client, db_con
     assert logged_in_client.get("/api/sessions/last-finished").json()["finished_at"] is None
 
 
+def test_last_collected_is_null_until_marked(logged_in_client):
+    session_id = logged_in_client.post("/api/sessions").json()["id"]
+    logged_in_client.patch(f"/api/sessions/{session_id}/finish", json={"jobs_found": 0, "jobs_scored": 0})
+    assert logged_in_client.get("/api/sessions/last-collected").json()["collected_at"] is None
+
+
+def test_mark_collected_sets_last_collected(logged_in_client):
+    session_id = logged_in_client.post("/api/sessions").json()["id"]
+    logged_in_client.post(f"/api/sessions/{session_id}/mark-collected")
+    assert logged_in_client.get("/api/sessions/last-collected").json()["collected_at"] is not None
+
+
+def test_last_collected_ignores_sessions_that_never_collected(user, logged_in_client, db_conn):
+    # Regression: a ranking/rescoring/re-evaluating session finishes 'done' just
+    # like a real collection does — only collected_at (set by mark-collected, not
+    # by finish()) should move the "since last collection" window forward.
+    cur = db_conn.cursor()
+    cur.execute(
+        "INSERT INTO sessions (user_id, status, finished_at) VALUES (%s, 'done', %s)",
+        (user["id"], datetime.utcnow()),
+    )
+    db_conn.commit()
+    assert logged_in_client.get("/api/sessions/last-collected").json()["collected_at"] is None
+
+
+def test_last_collected_uses_most_recent_mark(user, logged_in_client, db_conn):
+    cur = db_conn.cursor()
+    cur.execute(
+        "INSERT INTO sessions (user_id, status, collected_at) VALUES (%s, 'done', %s)",
+        (user["id"], datetime.utcnow() - timedelta(hours=100)),
+    )
+    cur.execute(
+        "INSERT INTO sessions (user_id, status, collected_at) VALUES (%s, 'done', %s)",
+        (user["id"], datetime.utcnow() - timedelta(hours=10)),
+    )
+    db_conn.commit()
+
+    collected_at = logged_in_client.get("/api/sessions/last-collected").json()["collected_at"]
+    collected_dt = datetime.fromisoformat(collected_at)
+    assert abs((collected_dt - (datetime.utcnow() - timedelta(hours=10))).total_seconds()) < 5
+
+
+def test_mark_collected_is_scoped_to_the_caller(logged_in_client, other_logged_in_client):
+    session_id = logged_in_client.post("/api/sessions").json()["id"]
+    # Another user's session id doesn't exist for this caller — mark-collected is a
+    # no-op UPDATE (0 rows), not a cross-tenant leak.
+    other_logged_in_client.post(f"/api/sessions/{session_id}/mark-collected")
+    assert other_logged_in_client.get("/api/sessions/last-collected").json()["collected_at"] is None
+
+
 def test_finish_writes_utc_regardless_of_session_timezone(user, db_conn):
     # Regression: JobAgent's _days_since_last_run() parses finished_at and diffs it
     # against its own datetime.utcnow() with no timezone conversion. If finished_at

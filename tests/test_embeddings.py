@@ -32,18 +32,26 @@ def test_upsert_is_idempotent_replace(logged_in_client):
 
 
 def test_unindexed_and_all_indexed(logged_in_client):
+    # get_unindexed/get_all_indexed are deliberately unscoped (embeddings are a
+    # property of the shared posting, not per-user) and job_postings is never
+    # truncated between tests — assert membership, not exact set equality,
+    # since other tests may leave their own unrelated unembedded jobs behind.
     with_desc = _create(logged_in_client, url="https://example.com/jobs/a")
     no_desc = _create(logged_in_client, url="https://example.com/jobs/b", description=None)
 
-    unindexed = logged_in_client.get("/api/embeddings/unindexed").json()
-    assert {j["id"] for j in unindexed} == {with_desc}  # no_desc excluded (no description)
+    unindexed_ids = {j["id"] for j in logged_in_client.get("/api/embeddings/unindexed").json()}
+    assert with_desc in unindexed_ids
+    assert no_desc not in unindexed_ids  # no description
 
     logged_in_client.post("/api/embeddings", json={
         "items": [{"job_id": with_desc, "embedding": [0.1], "model": "voyage-3-large"}],
     })
-    assert logged_in_client.get("/api/embeddings/unindexed").json() == []
-    all_indexed = logged_in_client.get("/api/embeddings/all-indexed").json()
-    assert [j["id"] for j in all_indexed] == [with_desc]
+    unindexed_ids = {j["id"] for j in logged_in_client.get("/api/embeddings/unindexed").json()}
+    assert with_desc not in unindexed_ids
+
+    all_indexed_ids = {j["id"] for j in logged_in_client.get("/api/embeddings/all-indexed").json()}
+    assert with_desc in all_indexed_ids
+    assert no_desc not in all_indexed_ids
 
 
 def test_embeddings_shared_across_users(logged_in_client, other_logged_in_client):
@@ -137,3 +145,25 @@ def test_similarity_zero_vector_scores_zero_not_nan(logged_in_client):
     })
     resp = logged_in_client.post("/api/embeddings/similarity", json={"ideal": [1.0, 0.0], "job_ids": [job_id]})
     assert resp.json()[job_id] == 0.0
+
+
+def test_similarity_batch_matches_each_job_to_its_own_score(logged_in_client):
+    # Regression guard for the numpy rewrite: scoring is now one matrix op over
+    # every vector at once instead of a per-row Python loop — confirms results
+    # still line up with the right job_id after batching, not just for N=1..3.
+    jobs = []
+    for i in range(12):
+        job_id = _create(logged_in_client, url=f"https://example.com/jobs/sim-batch-{i}")
+        # Each vector's similarity to [1.0, 0.0] should be exactly i / 11 by construction.
+        logged_in_client.post("/api/embeddings", json={
+            "items": [{"job_id": job_id, "embedding": [i / 11, 1 - i / 11], "model": "voyage-3-large"}],
+        })
+        jobs.append(job_id)
+
+    resp = logged_in_client.post("/api/embeddings/similarity", json={
+        "ideal": [1.0, 0.0], "job_ids": jobs,
+    })
+    scores = resp.json()
+    assert len(scores) == 12
+    ordered = sorted(jobs, key=lambda j: scores[j])
+    assert ordered == jobs  # increasing i => increasing similarity, in insertion order

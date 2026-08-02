@@ -279,6 +279,30 @@ def test_update_structured_data_is_shared_across_users(logged_in_client, other_l
     assert '"remote": true' in theirs["structured_data"]
 
 
+def test_missing_structured_data_includes_job_with_description_and_no_extraction(logged_in_client):
+    result = _create(logged_in_client, description="Has a description.")
+    ids = [j["id"] for j in logged_in_client.get("/api/jobs/missing-structured-data").json()]
+    assert result["job_id"] in ids
+
+
+def test_missing_structured_data_excludes_already_extracted_job(logged_in_client):
+    result = _create(logged_in_client, description="Has a description.")
+    logged_in_client.patch(f"/api/jobs/{result['job_id']}/structured-data", json={"data": {"remote": True}})
+    ids = [j["id"] for j in logged_in_client.get("/api/jobs/missing-structured-data").json()]
+    assert result["job_id"] not in ids
+
+
+def test_missing_structured_data_excludes_job_without_description(logged_in_client):
+    result = _create(logged_in_client, description=None)
+    ids = [j["id"] for j in logged_in_client.get("/api/jobs/missing-structured-data").json()]
+    assert result["job_id"] not in ids
+
+
+def test_missing_structured_data_is_scoped_to_the_caller(logged_in_client, other_logged_in_client):
+    _create(logged_in_client, description="Has a description.")
+    assert other_logged_in_client.get("/api/jobs/missing-structured-data").json() == []
+
+
 def test_update_would_apply_and_stats(logged_in_client):
     result = _create(logged_in_client)
     resp = logged_in_client.patch(f"/api/jobs/{result['job_id']}/would-apply", json={

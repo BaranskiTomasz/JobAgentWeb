@@ -15,24 +15,11 @@ def _precision_at_k(conn, user_id: int, k: int) -> dict:
     """"reviewed" means read-but-undecided (see the dashboard's own status meaning),
     not a decision — counting it as a positive would credit the ranking for jobs the
     user never actually validated, so it's excluded entirely, same as divergence_cases."""
-    rows = jobs_repo.get_ranked(conn, user_id, ["applied", "rejected", "auto_rejected"])[:k]
+    rows = jobs_repo.get_ranked(conn, user_id, ["applied", "rejected", "auto_rejected"], limit=k)
     if not rows:
         return {"precision_at_k": None, "n_evaluated": 0}
     positive = sum(1 for r in rows if r["status"] == "applied")
     return {"precision_at_k": round(positive / len(rows), 3), "n_evaluated": len(rows)}
-
-
-def _divergence_cases(conn, user_id: int) -> list[dict]:
-    """rank <=5 + rejected -> model overrated it; rank >=16 + applied -> model underrated it."""
-    rows = jobs_repo.get_ranked(conn, user_id, ["applied", "rejected"])
-    cases = []
-    for row in rows:
-        rank = row["listwise_rank"]
-        if rank <= 5 and row["status"] == "rejected":
-            cases.append({**row, "divergence_type": "false_positive"})
-        elif rank >= 16 and row["status"] == "applied":
-            cases.append({**row, "divergence_type": "false_negative"})
-    return cases
 
 
 @router.get("/report")
@@ -44,7 +31,7 @@ def report(user: dict = Depends(get_current_user), conn=Depends(get_db)):
         "precision_at_10": p10["precision_at_k"],
         "n_evaluated_5": p5["n_evaluated"],
         "n_evaluated_10": p10["n_evaluated"],
-        "divergence_cases": _divergence_cases(conn, user["id"]),
+        "divergence_cases": jobs_repo.get_divergence_cases(conn, user["id"]),
         "total_ranked": jobs_repo.count_ranked(conn, user["id"]),
         "would_apply": jobs_repo.get_would_apply_stats(conn, user["id"]),
         "would_apply_score_floor": WOULD_APPLY_SCORE_FLOOR,

@@ -1,5 +1,6 @@
 import json
-import math
+
+import numpy as np
 
 from db import dict_cursor
 
@@ -52,26 +53,34 @@ def get_vectors(conn, job_ids: list[str]) -> dict[str, list[float]]:
     return {r["job_id"]: json.loads(r["embedding"]) for r in cur.fetchall()}
 
 
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(x * x for x in b))
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
-
-
 def score_by_similarity(conn, ideal: list[float], job_ids: list[str]) -> dict[str, float]:
     """Cosine similarity of `ideal` against each job_id's vector, computed here
     instead of shipping raw vectors over HTTP for the caller to score itself.
     A 1024-dim vector serializes to ~22 KB of JSON — at a couple thousand jobs
     that's tens of MB shipped (and re-shipped on every retry) just so the
     caller could immediately reduce each one to a single float; this way only
-    the {job_id: score} result crosses the wire."""
+    the {job_id: score} result crosses the wire.
+
+    Vectorized as one matrix op instead of a per-row Python loop — at the
+    ranking pool's 2000-job cap this is a single BLAS call over a 2000x1024
+    matrix rather than 2000 separate dot-product-in-a-generator passes."""
     if not job_ids or not ideal:
         return {}
     vectors = get_vectors(conn, job_ids)
-    return {job_id: _cosine_similarity(ideal, vec) for job_id, vec in vectors.items()}
+    if not vectors:
+        return {}
+
+    ids = list(vectors.keys())
+    matrix = np.array([vectors[jid] for jid in ids], dtype=np.float64)
+    ideal_arr = np.array(ideal, dtype=np.float64)
+
+    ideal_norm = np.linalg.norm(ideal_arr)
+    row_norms = np.linalg.norm(matrix, axis=1)
+    denom = row_norms * ideal_norm
+
+    dots = matrix @ ideal_arr
+    scores = np.divide(dots, denom, out=np.zeros_like(dots), where=denom != 0)
+    return dict(zip(ids, scores.tolist()))
 
 
 _DECISION_VECTOR_LIMIT = 50
