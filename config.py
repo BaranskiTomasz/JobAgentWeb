@@ -40,3 +40,13 @@ INVITE_CODE = os.getenv("INVITE_CODE")
 # DISABLE_RATE_LIMIT=true; individual tests of the limiter itself flip this back
 # with monkeypatch.setattr("config.RATE_LIMIT_ENABLED", True).
 RATE_LIMIT_ENABLED = os.getenv("DISABLE_RATE_LIMIT", "false").lower() != "true"
+
+# Trusted-client bypass for the local JobAgent desktop installation (see
+# deps.py::get_current_user) — a static, random key instead of a browser
+# session cookie, so that one installation's automation never needs
+# interactive re-login and isn't affected by session_epoch logout. Scoped to
+# exactly one user_id, not a general API-key system for every account. Both
+# must be set together for the bypass to activate; unset (the default) keeps
+# every caller on session-cookie auth only.
+JOBAGENT_API_KEY = os.getenv("JOBAGENT_API_KEY")
+JOBAGENT_API_KEY_USER_ID = os.getenv("JOBAGENT_API_KEY_USER_ID")

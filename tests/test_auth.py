@@ -216,3 +216,67 @@ def test_login_and_register_are_independent_rate_limit_buckets(client, monkeypat
         "invite_code": "wrong-code",
     })
     assert resp.status_code == 400  # not 429 — register's own bucket is untouched
+
+
+class TestJobAgentApiKeyAuth:
+    """The trusted-client bypass for the local JobAgent desktop installation
+    (deps.py::get_current_user) — a static key instead of a session cookie, so
+    that one installation never needs interactive re-login."""
+
+    def test_correct_key_grants_access_without_any_login(self, client, user, monkeypatch):
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY", "test-shared-secret")
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", str(user["id"]))
+        resp = client.get("/api/jobs/stats", headers={"X-JobAgent-Api-Key": "test-shared-secret"})
+        assert resp.status_code == 200
+
+    def test_wrong_key_is_rejected(self, client, user, monkeypatch):
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY", "test-shared-secret")
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", str(user["id"]))
+        resp = client.get("/api/jobs/stats", headers={"X-JobAgent-Api-Key": "wrong-value"})
+        assert resp.status_code == 401
+
+    def test_missing_header_falls_back_to_session_check(self, client, monkeypatch):
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY", "test-shared-secret")
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", "1")
+        resp = client.get("/api/jobs/stats")
+        assert resp.status_code == 401
+
+    def test_bypass_inactive_when_not_configured(self, client, user):
+        # Default state (nothing set in .env) — the header must have no effect
+        # at all, not even a confusing partial match.
+        resp = client.get("/api/jobs/stats", headers={"X-JobAgent-Api-Key": "anything"})
+        assert resp.status_code == 401
+
+    def test_key_scopes_to_the_configured_user_only(self, client, user, other_user, monkeypatch):
+        # Regression guard: this must authenticate as the ONE configured
+        # user_id, not just "any" user or the first one found.
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY", "test-shared-secret")
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", str(user["id"]))
+        resp = client.post(
+            "/api/jobs",
+            headers={"X-JobAgent-Api-Key": "test-shared-secret"},
+            json={"title": "Dev", "company": "Acme", "location": "Remote",
+                  "url": "https://example.com/apikey-test", "source": "linkedin"},
+        )
+        assert resp.status_code == 200
+        owner_urls = client.get("/api/jobs/urls", headers={"X-JobAgent-Api-Key": "test-shared-secret"}).json()
+        assert "https://example.com/apikey-test" in owner_urls["urls"]
+
+    def test_nonexistent_configured_user_id_falls_back_to_session_check(self, client, monkeypatch):
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY", "test-shared-secret")
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", "999999")
+        resp = client.get("/api/jobs/stats", headers={"X-JobAgent-Api-Key": "test-shared-secret"})
+        assert resp.status_code == 401
+
+    def test_bypass_immune_to_session_epoch_logout(self, client, user, db_conn, monkeypatch):
+        # The entire point: a logout-everywhere (session_epoch bump) or an
+        # expired/invalid session cookie must not affect the API-key path at
+        # all — that's the failure mode this bypass exists to route around.
+        import users_repo
+        users_repo.bump_session_epoch(db_conn, user["id"])
+        db_conn.commit()
+
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY", "test-shared-secret")
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", str(user["id"]))
+        resp = client.get("/api/jobs/stats", headers={"X-JobAgent-Api-Key": "test-shared-secret"})
+        assert resp.status_code == 200
