@@ -68,6 +68,69 @@ class TestPrecisionAtK:
         assert body["precision_at_10"] == 0.5
 
 
+class TestApplyRateByBucket:
+    def test_no_ranked_jobs_returns_all_empty_buckets(self, logged_in_client):
+        buckets = logged_in_client.get("/api/eval/report").json()["apply_rate_by_bucket"]
+        assert [b["range"] for b in buckets] == ["1-5", "6-10", "11-15", "16-20"]
+        assert all(b["apply_rate"] is None and b["n"] == 0 for b in buckets)
+
+    def test_applied_and_rejected_split_within_a_bucket(self, logged_in_client):
+        _insert_ranked(logged_in_client, "applied", 1)
+        _insert_ranked(logged_in_client, "rejected", 2)
+        buckets = logged_in_client.get("/api/eval/report").json()["apply_rate_by_bucket"]
+        first = next(b for b in buckets if b["range"] == "1-5")
+        assert first["apply_rate"] == 0.5
+        assert first["n"] == 2
+
+    def test_ranks_bucketed_correctly_by_range(self, logged_in_client):
+        _insert_ranked(logged_in_client, "applied", 7)   # 6-10
+        _insert_ranked(logged_in_client, "applied", 20)  # 16-20
+        buckets = {b["range"]: b for b in logged_in_client.get("/api/eval/report").json()["apply_rate_by_bucket"]}
+        assert buckets["1-5"]["n"] == 0
+        assert buckets["6-10"]["n"] == 1
+        assert buckets["11-15"]["n"] == 0
+        assert buckets["16-20"]["n"] == 1
+
+    def test_reviewed_is_excluded_from_buckets(self, logged_in_client):
+        _insert_ranked(logged_in_client, "reviewed", 1)
+        buckets = logged_in_client.get("/api/eval/report").json()["apply_rate_by_bucket"]
+        assert all(b["n"] == 0 for b in buckets)
+
+    def test_sample_size_grows_with_decision_history_unlike_precision_at_k(self, logged_in_client):
+        # The whole point of the replacement: precision@5 only ever reflects 5
+        # data points no matter how much history accumulates. The bucket for the
+        # same rank range must keep growing as more jobs are decided there.
+        for i in range(8):
+            _insert_ranked(logged_in_client, "applied" if i % 2 == 0 else "rejected", 1, url=f"https://example.com/eval/bucket-growth-{i}")
+        body = logged_in_client.get("/api/eval/report").json()
+        assert body["n_evaluated_5"] == 5  # precision@5 still capped at 5...
+        first_bucket = next(b for b in body["apply_rate_by_bucket"] if b["range"] == "1-5")
+        assert first_bucket["n"] == 8  # ...but the bucket reflects all 8 decisions
+
+    def test_fallback_rank_reason_is_excluded_from_buckets(self, logged_in_client):
+        # A FALLBACK_RANK_REASON row's position comes from rerank order, not Opus
+        # judgment — counting it would credit/blame the wrong stage of the pipeline.
+        job_id = _insert_ranked(logged_in_client, "applied", 1)
+        logged_in_client.patch(f"/api/jobs/{job_id}/ranking", json={
+            "embedding_score": 0.8, "rerank_score": 0.8, "listwise_rank": 1,
+            "rank_reason": "[unranked — Opus ranking unavailable this run, showing rerank order]",
+        })
+        buckets = logged_in_client.get("/api/eval/report").json()["apply_rate_by_bucket"]
+        assert all(b["n"] == 0 for b in buckets)
+
+    def test_exploration_pick_is_excluded_from_buckets(self, logged_in_client):
+        # An exploration slot's rank reflects pool composition (a randomly
+        # injected outsider), not the normal deterministic pipeline's judgment —
+        # same exclusion reasoning as the fallback/omitted sentinels.
+        job_id = _insert_ranked(logged_in_client, "applied", 2)
+        logged_in_client.patch(f"/api/jobs/{job_id}/ranking", json={
+            "embedding_score": 0.8, "rerank_score": 0.8, "listwise_rank": 2,
+            "rank_reason": "[EXPLORATION] Great fit despite being outside the top-20 pool.",
+        })
+        buckets = logged_in_client.get("/api/eval/report").json()["apply_rate_by_bucket"]
+        assert all(b["n"] == 0 for b in buckets)
+
+
 class TestDivergenceCases:
     def test_false_positive_high_rank_rejected(self, logged_in_client):
         _insert_ranked(logged_in_client, "rejected", 2)
