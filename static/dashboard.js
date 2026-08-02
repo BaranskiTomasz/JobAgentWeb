@@ -531,6 +531,20 @@ function _renderCard(j) {
   const score = j.score != null ? j.score.toFixed(1) : '—';
   const meterPct = j.score != null ? Math.max(0, Math.min(100, (j.score / 10) * 100)) : 0;
   const rankBadge = j.listwise_rank != null ? `<div class="rank-badge">#${j.listwise_rank}</div>` : '';
+  // JobAgent's ranker/exploration.py prefixes rank_reason with "[EXPLORATION] "
+  // for jobs randomly sampled from outside the top-ranked pool for a full AI
+  // review (see JobAgent's routers/evaluation.py apply-rate-by-bucket, which
+  // excludes these from the ranking-quality metric for the same reason: the
+  // rank reflects pool composition, not the normal pipeline's judgment).
+  // Stripped from the displayed reason and shown as a badge instead of raw
+  // bracket text.
+  const isExploration = (j.rank_reason || '').startsWith('[EXPLORATION] ');
+  const explorationBadge = isExploration
+    ? `<div class="exploration-badge" title="Randomly sampled from outside the top-ranked pool for a full AI review — checks whether the ranking is missing good jobs lower down.">
+         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M14.5 9.5l-2 5-5 2 2-5 5-2z"/></svg>
+         Exploration pick
+       </div>`
+    : '';
   const wouldApplyBadge = j.would_apply
     ? `<div class="would-apply-badge" title="${esc(j.would_apply_reason || '')}">
          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
@@ -543,7 +557,7 @@ function _renderCard(j) {
   const locFilterKey = 'loc=' + locFilterValue;
   const locLabel = j.location || '—';
 
-  const reason = j.rank_reason || j.score_reason || '';
+  const reason = (j.rank_reason || j.score_reason || '').replace(/^\[EXPLORATION\] /, '');
   let rejNote = null;
   if (j.status === 'rejected' && j.rejection_reason) rejNote = j.rejection_reason;
   else if (j.status === 'auto_rejected' && j.score_reason) rejNote = j.score_reason;
@@ -576,6 +590,7 @@ function _renderCard(j) {
         </div>
         <div class="score-block">
           ${wouldApplyBadge}
+          ${explorationBadge}
           ${rankBadge}
           <div class="score-meter">
             <div class="score-num">${score}<span class="of">/10</span></div>
