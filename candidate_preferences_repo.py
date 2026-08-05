@@ -6,11 +6,10 @@ from db import dict_cursor
 # job_postings.structured_data and cv_profiles.parsed.
 _JSON_FIELDS = {
     "work_mode", "remote_countries", "hybrid_cities", "seniority_levels", "role_types",
-    "preferred_company_types", "excluded_company_types", "preferred_industries",
-    "excluded_industries", "extra_tech", "avoided_tech", "languages",
+    "preferred_company_types", "extra_tech", "avoided_tech", "languages",
 }
 _SCALAR_FIELDS = {
-    "salary_min", "salary_max", "salary_currency", "show_jobs_without_salary", "open_notes",
+    "salary_min", "salary_currency", "show_jobs_without_salary", "open_notes",
 }
 _VALID_FIELDS = _JSON_FIELDS | _SCALAR_FIELDS
 

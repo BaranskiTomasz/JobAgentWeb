@@ -58,8 +58,8 @@
 
       <div class="panel">
         <div class="panel-label">Compensation</div>
-        {% if prefs.salary_min or prefs.salary_max %}
-          <p class="pref-plain">{{ prefs.salary_min or '?' }}–{{ prefs.salary_max or '?' }} {{ prefs.salary_currency or '' }} / year</p>
+        {% if prefs.salary_min %}
+          <p class="pref-plain">{{ prefs.salary_min }}+ {{ prefs.salary_currency or '' }} / year</p>
         {% else %}
           <p class="lc-empty">Not set</p>
         {% endif %}
@@ -75,10 +75,7 @@
       <div class="panel">
         <div class="panel-label">Company</div>
         {% if prefs.preferred_company_types %}<p class="pref-plain"><b>Preferred:</b> {{ prefs.preferred_company_types | join(', ') }}</p>{% endif %}
-        {% if prefs.excluded_company_types %}<p class="pref-plain"><b>Excluded:</b> {{ prefs.excluded_company_types | join(', ') }}</p>{% endif %}
-        {% if prefs.preferred_industries %}<p class="pref-plain"><b>Preferred industries:</b> {{ prefs.preferred_industries | join(', ') }}</p>{% endif %}
-        {% if prefs.excluded_industries %}<p class="pref-plain"><b>Excluded industries:</b> {{ prefs.excluded_industries | join(', ') }}</p>{% endif %}
-        {% if not (prefs.preferred_company_types or prefs.excluded_company_types or prefs.preferred_industries or prefs.excluded_industries) %}
+        {% if not prefs.preferred_company_types %}
           <p class="lc-empty">Not set</p>
         {% endif %}
       </div>

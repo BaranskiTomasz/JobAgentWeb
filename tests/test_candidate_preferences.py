@@ -17,6 +17,17 @@ def test_invalid_field_rejected(logged_in_client):
     assert resp.status_code == 400
 
 
+def test_removed_dead_fields_are_rejected(logged_in_client):
+    # Regression: salary_max, excluded_company_types, preferred_industries, and
+    # excluded_industries were collected/stored but never read by anything
+    # downstream (no consumer in evaluator/profile.py, no UI writer for the
+    # latter three) — removed from _JSON_FIELDS/_SCALAR_FIELDS. Confirms they're
+    # actually gone, not just unused.
+    for field in ("salary_max", "excluded_company_types", "preferred_industries", "excluded_industries"):
+        resp = logged_in_client.post("/api/candidate-preferences", json={"fields": {field: 1}})
+        assert resp.status_code == 400, f"{field} should have been rejected"
+
+
 def test_update_in_place(logged_in_client):
     pref_id = logged_in_client.post("/api/candidate-preferences", json={
         "fields": {"salary_min": 10000},
