@@ -174,3 +174,28 @@ def test_start_allowed_again_after_cancel_active(logged_in_client):
     logged_in_client.post("/api/sessions/cancel-active")
     resp = logged_in_client.post("/api/sessions")
     assert resp.status_code == 200
+
+
+def test_active_run_still_detected_past_the_old_6_hour_window(user, logged_in_client, db_conn):
+    # Regression: a real LinkedIn collector run (stealth-paced, one browser
+    # session per description batch) has taken 4+ hours on its own before even
+    # reaching the downstream stages — the old 6h self-heal window left too
+    # little margin, so a run genuinely still in progress could silently stop
+    # being guarded against a second, concurrent one.
+    cur = db_conn.cursor()
+    cur.execute(
+        "INSERT INTO sessions (user_id, status, started_at) VALUES (%s, 'running', %s)",
+        (user["id"], datetime.utcnow() - timedelta(hours=10)),
+    )
+    db_conn.commit()
+    assert logged_in_client.get("/api/sessions/has-active").json()["active"] is True
+
+
+def test_active_run_self_heals_after_24_hours(user, logged_in_client, db_conn):
+    cur = db_conn.cursor()
+    cur.execute(
+        "INSERT INTO sessions (user_id, status, started_at) VALUES (%s, 'running', %s)",
+        (user["id"], datetime.utcnow() - timedelta(hours=30)),
+    )
+    db_conn.commit()
+    assert logged_in_client.get("/api/sessions/has-active").json()["active"] is False

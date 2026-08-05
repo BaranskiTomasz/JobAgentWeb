@@ -51,10 +51,22 @@ def cancel_active(conn, user_id: int) -> None:
 
 
 def has_active_run(conn, user_id: int) -> bool:
-    """True if a session started within the last 6 hours is still running."""
+    """True if a session started within the last 24 hours is still running.
+
+    This window exists so a crashed run (killed without ever reaching finish())
+    doesn't lock the account out of starting a new one forever — it self-heals
+    once the window passes, at the cost of not guarding against a genuine
+    concurrent-run race after that. 6 hours used to be that window, sized for a
+    normal run; a real LinkedIn collector run (stealth-paced, one browser
+    session per description batch) has since taken 4+ hours on its own before
+    even reaching the downstream stages, which left too little margin — a run
+    that was still legitimately in progress could silently stop being guarded
+    against a second, concurrent one. 24h trades a slower self-heal for that
+    margin; see cancel_active() for reclaiming sooner when you know a run is
+    actually dead."""
     cur = dict_cursor(conn)
     cur.execute(
-        "SELECT id FROM sessions WHERE user_id = %s AND status = 'running' AND started_at > NOW() - INTERVAL '6 hours'",
+        "SELECT id FROM sessions WHERE user_id = %s AND status = 'running' AND started_at > NOW() - INTERVAL '24 hours'",
         (user_id,),
     )
     return cur.fetchone() is not None
