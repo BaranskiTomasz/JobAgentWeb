@@ -32,10 +32,15 @@ class TestPrecisionAtK:
         body = logged_in_client.get("/api/eval/report").json()
         assert body["precision_at_5"] == 0.0
 
-    def test_auto_rejected_counts_as_negative(self, logged_in_client):
+    def test_auto_rejected_is_not_a_user_decision_and_is_excluded(self, logged_in_client):
+        # auto_rejected is the pipeline's own decision (evaluator's score threshold
+        # or the dealbreaker filter), not the user's — counting it as a validated
+        # negative would grade the scorer partly against its own earlier verdict on
+        # the same job. Same exclusion reasoning as "reviewed" above.
         _insert_ranked(logged_in_client, "auto_rejected", 1)
         body = logged_in_client.get("/api/eval/report").json()
-        assert body["precision_at_5"] == 0.0
+        assert body["n_evaluated_5"] == 0
+        assert body["precision_at_5"] is None
 
     def test_tied_rank_orders_most_recently_decided_first(self, user, logged_in_client, db_conn):
         # Regression: listwise_rank is only ever 1-20 and freezes at decision time,
@@ -93,6 +98,13 @@ class TestApplyRateByBucket:
 
     def test_reviewed_is_excluded_from_buckets(self, logged_in_client):
         _insert_ranked(logged_in_client, "reviewed", 1)
+        buckets = logged_in_client.get("/api/eval/report").json()["apply_rate_by_bucket"]
+        assert all(b["n"] == 0 for b in buckets)
+
+    def test_auto_rejected_is_excluded_from_buckets(self, logged_in_client):
+        # Same reasoning as reviewed above: auto_rejected is the pipeline's own
+        # decision, not the user's, so it shouldn't count toward apply-rate either.
+        _insert_ranked(logged_in_client, "auto_rejected", 1)
         buckets = logged_in_client.get("/api/eval/report").json()["apply_rate_by_bucket"]
         assert all(b["n"] == 0 for b in buckets)
 

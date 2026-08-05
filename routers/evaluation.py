@@ -32,11 +32,18 @@ def _precision_at_k(conn, user_id: int, k: int) -> dict:
     not a decision — counting it as a positive would credit the ranking for jobs the
     user never actually validated, so it's excluded entirely, same as divergence_cases.
 
+    "auto_rejected" is excluded for the same reason, one level removed: it isn't
+    a user decision either — it's the pipeline's OWN evaluator (evaluator/runner.py's
+    auto_reject_threshold) or dealbreaker filter rejecting the job before the user
+    ever sees it. Counting it as a validated negative made this metric partly grade
+    the scorer against its own earlier decision about the same job — the same
+    circularity "reviewed" was excluded for, just one hop further removed.
+
     Kept for backward compatibility (older deployed dashboard builds may still read
     precision_at_5/10) but superseded by _apply_rate_by_bucket: this only ever
     reflects the K best-ever-frozen-rank decided jobs across all history, which
     never grows with more data and never reflects the *current* ranking's quality."""
-    rows = jobs_repo.get_ranked(conn, user_id, ["applied", "rejected", "auto_rejected"], limit=k)
+    rows = jobs_repo.get_ranked(conn, user_id, ["applied", "rejected"], limit=k)
     if not rows:
         return {"precision_at_k": None, "n_evaluated": 0}
     positive = sum(1 for r in rows if r["status"] == "applied")
@@ -60,8 +67,12 @@ def _apply_rate_by_bucket(conn, user_id: int) -> list[dict]:
     dominate forever since their frozen rank never gets displaced, and (c) never
     grew with more decision data. This instead reveals whether apply-rate
     monotonically decreases as rank worsens — the real signal of ranking
-    quality — and its sample size grows with every decision."""
-    rows = jobs_repo.get_ranked(conn, user_id, ["applied", "rejected", "auto_rejected"])
+    quality — and its sample size grows with every decision.
+
+    "auto_rejected" excluded, same reasoning as _precision_at_k above: it's the
+    pipeline's own decision, not the user's, so counting it here would grade
+    the scorer partly against itself."""
+    rows = jobs_repo.get_ranked(conn, user_id, ["applied", "rejected"])
     rows = [r for r in rows if not _is_excluded_from_bucket_metric(r.get("rank_reason"))]
 
     buckets = []

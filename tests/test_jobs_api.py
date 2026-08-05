@@ -318,6 +318,19 @@ def test_missing_structured_data_excludes_job_without_description(logged_in_clie
     assert result["job_id"] not in ids
 
 
+def test_missing_structured_data_excludes_already_decided_jobs(logged_in_client):
+    # Regression: this endpoint used to have no status filter at all, so
+    # scripts/extract_jobs.py (JobAgent) re-processed the whole historical pool
+    # every run — reviewed/applied/rejected/auto_rejected jobs never re-enter
+    # scoring or ranking, so extracting structured_data for one is pure sunk
+    # Haiku cost with no downstream reader.
+    for status in ("reviewed", "applied", "rejected", "auto_rejected"):
+        result = _create(logged_in_client, description="Has a description.", url=f"https://example.com/jobs/{status}")
+        logged_in_client.patch(f"/api/jobs/{result['job_id']}/status", json={"status": status})
+        ids = [j["id"] for j in logged_in_client.get("/api/jobs/missing-structured-data").json()]
+        assert result["job_id"] not in ids, f"status={status} should be excluded"
+
+
 def test_missing_structured_data_is_scoped_to_the_caller(logged_in_client, other_logged_in_client):
     _create(logged_in_client, description="Has a description.")
     assert other_logged_in_client.get("/api/jobs/missing-structured-data").json() == []

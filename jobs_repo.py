@@ -300,14 +300,20 @@ def get_missing_descriptions(conn, user_id: int) -> list[dict]:
 
 
 def get_missing_structured_data(conn, user_id: int) -> list[dict]:
-    """This user's jobs that have a description but haven't been through
-    structured extraction yet — candidates for scripts/extract_jobs.py's
+    """This user's still-live jobs that have a description but haven't been
+    through structured extraction yet — candidates for scripts/extract_jobs.py's
     backfill. Filtered server-side instead of shipping the whole lifetime
-    pool for the caller to filter client-side."""
+    pool for the caller to filter client-side.
+
+    status = 'new' on purpose: a reviewed/applied/rejected/auto_rejected job is
+    already decided and never re-enters scoring or ranking, so extracting
+    structured_data for one is pure sunk Haiku cost with no downstream reader —
+    it used to have no status filter at all, silently re-processing the whole
+    historical pool (any status) every single run, growing with account age."""
     cur = dict_cursor(conn)
     sql = f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
               WHERE ujs.user_id = %s AND jp.description IS NOT NULL AND jp.description != ''
-              AND jp.structured_data IS NULL
+              AND jp.structured_data IS NULL AND ujs.status = 'new'
               ORDER BY jp.created_at DESC"""
     cur.execute(sql, (user_id,))
     return [_row_to_job(r) for r in cur.fetchall()]
