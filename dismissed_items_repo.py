@@ -20,7 +20,6 @@ def get_for_job(conn, user_id: int, job_id: str) -> list[dict]:
 
 
 def get_recent(conn, user_id: int, limit: int = 50) -> list[dict]:
-    """Most recent dismissals across all of this user's jobs, for the distillation prompt."""
     cur = dict_cursor(conn)
     cur.execute(
         """SELECT d.item_type, d.item_text, d.reason, d.created_at, jp.title, jp.company

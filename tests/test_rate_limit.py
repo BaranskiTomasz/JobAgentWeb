@@ -22,7 +22,7 @@ def _request():
 
 def test_stale_keys_are_evicted_once_the_tracked_count_crosses_the_threshold(monkeypatch):
     # Regression guard: a key whose window has fully expired has no request
-    # left to prune it via its own enforce() call — this is the only other
+    # left to prune it via its own enforce() call, this is the only other
     # place stale entries get cleaned up, and it only engages once the dict
     # has actually grown large (checked below via the low threshold).
     monkeypatch.setattr(rate_limit, "_MAX_TRACKED_KEYS", 2)
@@ -31,7 +31,7 @@ def test_stale_keys_are_evicted_once_the_tracked_count_crosses_the_threshold(mon
 
     monkeypatch.setattr(rate_limit.time, "monotonic", lambda: 1_000_000.0 + rate_limit._WINDOW_SECONDS + 1)
     rate_limit.enforce(_request(), "login", key="ghost-2")
-    # Crossing _MAX_TRACKED_KEYS on this third call triggers the sweep — "ghost-1"'s
+    # Crossing _MAX_TRACKED_KEYS on this third call triggers the sweep, "ghost-1"'s
     # window has long since expired and should be gone.
     rate_limit.enforce(_request(), "login", key="ghost-3")
 

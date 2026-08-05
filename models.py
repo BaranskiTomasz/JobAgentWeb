@@ -50,7 +50,7 @@ class JobCreate(BaseModel):
 
 
 class JobCreateResult(BaseModel):
-    job_id: str | None  # None means this user already has this posting — not inserted again
+    job_id: str | None  # None means this user already has this posting, not inserted again
     posting_created: bool  # False means the posting was already known (from another user); skip re-fetching/re-extracting
 
 
@@ -131,7 +131,7 @@ class WouldApplyStats(BaseModel):
     precision: float | None
 
 
-# ── CV profiles ──────────────────────────────────────────────────────────────
+# CV profiles
 
 class CVProfileCreate(BaseModel):
     filename: str
@@ -139,7 +139,7 @@ class CVProfileCreate(BaseModel):
     parsed: dict
 
 
-# ── Criteria ─────────────────────────────────────────────────────────────────
+# Criteria
 
 class CriteriaCreate(BaseModel):
     type: Literal["title", "location", "required", "preferred", "rejected", "search_query"]
@@ -150,7 +150,7 @@ class CriteriaToggle(BaseModel):
     is_active: bool
 
 
-# ── Preference profile (distilled signals) ──────────────────────────────────
+# Preference profile (distilled signals)
 
 class PreferenceProfileSave(BaseModel):
     signals: list[dict]
@@ -159,7 +159,7 @@ class PreferenceProfileSave(BaseModel):
     dismissed_count: int = 0
 
 
-# ── Candidate preferences (questionnaire) ───────────────────────────────────
+# Candidate preferences (questionnaire)
 
 class CandidatePreferencesCreate(BaseModel):
     cv_profile_id: int | None = None
@@ -170,7 +170,7 @@ class CandidatePreferencesUpdate(BaseModel):
     fields: dict
 
 
-# ── Dismissed score items ────────────────────────────────────────────────────
+# Dismissed score items
 
 class DismissedItemCreate(BaseModel):
     item_type: Literal["pro", "con"]
@@ -178,7 +178,7 @@ class DismissedItemCreate(BaseModel):
     reason: str
 
 
-# ── Excluded search queries ─────────────────────────────────────────────────
+# Excluded search queries
 
 class ExcludedQueryCreate(BaseModel):
     source: str
@@ -186,7 +186,7 @@ class ExcludedQueryCreate(BaseModel):
     reason: str
 
 
-# ── Search stats ─────────────────────────────────────────────────────────────
+# Search stats
 
 class SearchStatRecord(BaseModel):
     session_id: int | None = None
@@ -197,7 +197,7 @@ class SearchStatRecord(BaseModel):
     new_found: int = 0
 
 
-# ── Sessions ─────────────────────────────────────────────────────────────────
+# Sessions
 
 class SessionFinish(BaseModel):
     jobs_found: int = 0
@@ -205,7 +205,7 @@ class SessionFinish(BaseModel):
     status: Literal["done", "error", "done_with_errors"] = "done"
 
 
-# ── Usage / cost ─────────────────────────────────────────────────────────────
+# Usage / cost
 
 class UsageLogCreate(BaseModel):
     model: str
@@ -220,7 +220,7 @@ class RunSummaryCreate(BaseModel):
     started_at: str
 
 
-# ── Embeddings ───────────────────────────────────────────────────────────────
+# Embeddings
 
 class EmbeddingItem(BaseModel):
     job_id: str

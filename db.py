@@ -21,9 +21,8 @@ def _get_pool() -> ThreadedConnectionPool:
 
 
 def get_db() -> Iterator[psycopg2.extensions.connection]:
-    """FastAPI dependency: yields a pooled connection, committing on success and
-    rolling back on any exception so a failed request never leaves a half-applied
-    write for the next borrower of that pooled connection."""
+    # Roll back on error so a failed request doesn't leave a half-applied write
+    # for whoever borrows this connection from the pool next.
     pool = _get_pool()
     conn = pool.getconn()
     try:

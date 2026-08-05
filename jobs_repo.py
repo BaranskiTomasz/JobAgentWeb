@@ -5,12 +5,9 @@ from psycopg2.extras import execute_values
 
 from db import dict_cursor
 
-# Explicit aliases: both tables have an `id` column, and `jp.*, ujs.*` would let one clobber the other.
-# structured_data/source_structured_data/score_breakdown are stored as JSONB
-# (write-time validation) but cast back to text on the way out — every
-# consumer, in this codebase and in JobAgent, already does its own
-# json.loads() on these fields, so the HTTP API's string contract is kept
-# unchanged rather than pushing that migration onto every caller.
+# Explicit aliases: both tables have an `id` column, and `jp.*, ujs.*` would let
+# one clobber the other. The JSONB columns are cast back to text on the way out
+# so the HTTP response stays a string, matching every existing json.loads() caller.
 _JOB_COLUMNS = """
     jp.id, jp.title, jp.company, jp.location, jp.url, jp.description, jp.source,
     jp.source_id, jp.search_query, jp.structured_data::text, jp.posted_at, jp.source_structured_data::text,
@@ -35,25 +32,19 @@ def _row_to_job(row: dict) -> dict:
 
 
 def insert(conn, user_id: int, job: dict) -> dict:
-    """job_id is None only if this user already has a state for this posting.
-    posting_created=False (posting known from another user) tells the caller to
-    skip re-fetching/re-extracting.
-
-    Atomic (ON CONFLICT DO NOTHING), not check-then-insert: two collectors
-    racing on the same URL — e.g. two runs started within a second of each
-    other, which is exactly what happened in production once — used to hit a
-    duplicate-key error on the second insert, which the collector's generic
-    except-and-skip swallowed, leaving that run's caller with no state row and
-    no error either. job_id is deterministic from the URL (_generate_id), so
-    it's correct whether or not this call's own INSERT is the one that wins."""
+    # job_id is None only if this user already has a state for this posting.
+    # posting_created=False tells the caller the posting was already known
+    # (from another user), so it can skip re-fetching/re-extracting.
+    #
+    # ON CONFLICT DO NOTHING instead of check-then-insert makes two collectors
+    # racing on the same URL safe: job_id is deterministic from the URL, so
+    # it's correct whichever of the two INSERTs actually wins.
     cur = dict_cursor(conn)
     job_id = _generate_id(job["url"])
 
     cur.execute(
-        # No conflict target: id and url are both unique constraints on this
-        # table and both are deterministic from the same url, so a genuine
-        # concurrent race can trip either one depending on timing — targeting
-        # just one (e.g. "ON CONFLICT (url)") leaves the other race window open.
+        # No conflict target: id and url are both unique and both deterministic
+        # from the same url, so targeting just one leaves the other race open.
         """INSERT INTO job_postings (id, title, company, location, url, description, source, source_id, search_query, posted_at, source_structured_data)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            ON CONFLICT DO NOTHING
@@ -180,13 +171,9 @@ def update_would_apply(conn, user_id: int, job_id: str, would_apply: bool, reaso
 
 
 def update_ranking_scores_batch(conn, user_id: int, items: list[dict]) -> int:
-    """One round-trip for the whole batch instead of one PATCH per job — rank_jobs.py
-    writes back a score for every job in the active pool on every run (hundreds of
-    rows), which used to mean that many separate SELECT+UPDATE+SELECT round-trips.
-    Rows for job_ids this user has no state for simply match nothing (same
-    authorization shape as the single-job endpoint's per-row user_id scoping, just
-    without a 404 for a mismatch — a batch silently skipping an unknown id is the
-    right behavior here, not an error for the whole batch)."""
+    # One round-trip for the whole batch instead of one UPDATE per job. Rows for
+    # job_ids this user has no state for simply match nothing and are skipped,
+    # rather than erroring the whole batch over one bad id.
     if not items:
         return 0
     cur = conn.cursor()
@@ -229,12 +216,8 @@ def update_would_apply_batch(conn, user_id: int, items: list[dict]) -> int:
 
 
 def update_structured_data(conn, job_id: str, data: dict) -> None:
-    """Shared, not user-scoped — structured_data is an LLM extraction of the
-    posting itself (stack/seniority/remote/etc.), true for every user who sees
-    this posting, so whoever extracts it first benefits everyone else too.
-    Write-once (only fills a NULL value): any authenticated user who has ever
-    linked to this posting can call this endpoint, so without this guard one
-    user could silently overwrite another user's already-extracted data."""
+    # Shared across every user who sees this posting, and write-once (only
+    # fills a NULL) so one user can't overwrite another's already-extracted data.
     cur = conn.cursor()
     cur.execute(
         "UPDATE job_postings SET structured_data = %s, updated_at = CURRENT_TIMESTAMP"
@@ -276,13 +259,9 @@ def get_stats(conn, user_id: int) -> dict:
 
 
 def get_all_urls(conn, user_id: int) -> set[str]:
-    """URLs of postings *this user* already has a state row for. Scoped by
-    user, not system-wide: most collector sources skip a card outright when
-    its URL is already "known" (never calling insert() at all), so a global
-    set here meant a second user's collector silently skipped every posting
-    the first user had already found — the shared pool never actually got
-    shared. A URL unknown to this user still resolves correctly in insert()
-    (reuses the existing job_postings row, just adds this user's state row)."""
+    # Scoped to this user, not system-wide: collectors skip a card outright
+    # when its URL is already "known", so a global set here would make a
+    # second user's collector silently skip postings only the first user found.
     cur = dict_cursor(conn)
     cur.execute(
         "SELECT jp.url FROM job_postings jp JOIN user_job_states ujs ON ujs.job_id = jp.id WHERE ujs.user_id = %s",
@@ -292,8 +271,6 @@ def get_all_urls(conn, user_id: int) -> set[str]:
 
 
 def get_missing_descriptions(conn, user_id: int) -> list[dict]:
-    """This user's jobs (any source) without a description that are not yet
-    scored — candidates for backfill."""
     cur = dict_cursor(conn)
     cur.execute(
         """SELECT jp.id, jp.url, jp.source FROM job_postings jp JOIN user_job_states ujs ON ujs.job_id = jp.id
@@ -305,16 +282,8 @@ def get_missing_descriptions(conn, user_id: int) -> list[dict]:
 
 
 def get_missing_structured_data(conn, user_id: int) -> list[dict]:
-    """This user's still-live jobs that have a description but haven't been
-    through structured extraction yet — candidates for scripts/extract_jobs.py's
-    backfill. Filtered server-side instead of shipping the whole lifetime
-    pool for the caller to filter client-side.
-
-    status = 'new' on purpose: a reviewed/applied/rejected/auto_rejected job is
-    already decided and never re-enters scoring or ranking, so extracting
-    structured_data for one is pure sunk Haiku cost with no downstream reader —
-    it used to have no status filter at all, silently re-processing the whole
-    historical pool (any status) every single run, growing with account age."""
+    # status = 'new' on purpose: a decided job never re-enters scoring or
+    # ranking, so extracting structured_data for one is sunk cost with no reader.
     cur = dict_cursor(conn)
     sql = f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
               WHERE ujs.user_id = %s AND jp.description IS NOT NULL AND jp.description != ''
@@ -325,7 +294,7 @@ def get_missing_structured_data(conn, user_id: int) -> list[dict]:
 
 
 def update_description(conn, job_id: str, description: str) -> None:
-    """Shared, not user-scoped, write-once — same reasoning as update_structured_data."""
+    # Shared, not user-scoped, write-once - same reasoning as update_structured_data.
     cur = conn.cursor()
     cur.execute(
         "UPDATE job_postings SET description = %s, updated_at = CURRENT_TIMESTAMP"
@@ -335,7 +304,6 @@ def update_description(conn, job_id: str, description: str) -> None:
 
 
 def update_score_and_status(conn, user_id: int, job_id: str, score: float | None, reason: str, status: str, breakdown: dict | None = None) -> None:
-    """Atomic combined update — mirrors the old single-table version."""
     cur = conn.cursor()
     cur.execute(
         "UPDATE user_job_states SET score = %s, score_reason = %s, score_breakdown = %s, status = %s, updated_at = CURRENT_TIMESTAMP"
@@ -354,7 +322,6 @@ def get_new(conn, user_id: int) -> list[dict]:
 
 
 def get_unscored(conn, user_id: int) -> list[dict]:
-    """This user's jobs that are new and have not been scored yet."""
     cur = dict_cursor(conn)
     cur.execute(
         f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
@@ -367,7 +334,6 @@ def get_unscored(conn, user_id: int) -> list[dict]:
 
 
 def get_new_with_descriptions(conn, user_id: int) -> list[dict]:
-    """All this user's 'new' jobs that have descriptions — used for force-rescore."""
     cur = dict_cursor(conn)
     cur.execute(
         f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
@@ -399,12 +365,9 @@ def get_examples(conn, user_id: int, limit_positive: int = 25, limit_negative: i
 def get_all_feedback(
     conn, user_id: int, limit_applied: int | None = None, limit_rejected: int | None = None,
 ) -> tuple[list[dict], list[dict]]:
-    """Most-recent-first, optionally capped, with descriptions truncated to 1500
-    chars server-side (_job_line() in preference_agent/runner.py only ever uses
-    the first 1500 chars of a description anyway — no point shipping the rest).
-    Includes decided_at (ujs.updated_at) so the distiller can tell a 6-month-old
-    decision from yesterday's — previously omitted, so a reversed preference had
-    no way to be expressed as "reversed" rather than just contradictory."""
+    # Descriptions truncated to 1500 chars server-side since the preference
+    # distiller never reads further. decided_at lets it tell a recent reversal
+    # apart from an old, settled decision.
     cur = dict_cursor(conn)
     sql = """SELECT jp.title, jp.company, jp.location, LEFT(jp.description, 1500) AS description,
                      ujs.score_reason, ujs.updated_at AS decided_at
@@ -472,8 +435,8 @@ def count_by_filter(conn, user_id: int, statuses: list[str], date_from: str | No
 
 
 def delete_by_filter(conn, user_id: int, statuses: list[str], date_from: str | None = None, date_to: str | None = None) -> int:
-    """'Delete' means remove from this user's view only — job_postings (shared
-    with every other user who's found the same URL) is never touched."""
+    # Removes only this user's view; job_postings (shared with every other
+    # user who's found the same URL) is never touched.
     if not statuses:
         return 0
     where, params = _filter_sql(statuses, date_from, date_to)
@@ -483,7 +446,6 @@ def delete_by_filter(conn, user_id: int, statuses: list[str], date_from: str | N
 
 
 def get_jobs_for_ranking(conn, user_id: int, limit: int = 2000) -> list[dict]:
-    """All this user's 'new' jobs with descriptions."""
     cur = dict_cursor(conn)
     cur.execute(
         f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
@@ -508,8 +470,7 @@ def get_rejected_job_ids(conn, user_id: int) -> list[str]:
 
 
 def count_decisions(conn, user_id: int) -> int:
-    """Total number of applied + rejected decisions for this user. Used for the
-    auto-distillation trigger."""
+    # Used to trigger auto-distillation once enough decisions accumulate.
     cur = conn.cursor()
     cur.execute(
         "SELECT COUNT(*) FROM user_job_states WHERE user_id = %s AND status IN ('applied', 'rejected')",
@@ -522,10 +483,8 @@ _PRUNING_LOOKBACK_DAYS = 30
 
 
 def get_query_outcome_stats(conn, user_id: int, source: str) -> list[dict]:
-    """Per search_query outcome totals for one source, for this user, over the
-    trailing _PRUNING_LOOKBACK_DAYS. Windowed rather than all-time: a query that
-    was reject-heavy a year ago but has been fine since shouldn't stay excluded
-    forever on the strength of decisions the user has long moved past."""
+    # Windowed to the trailing days, not all-time, so a query that was
+    # reject-heavy a year ago doesn't stay excluded forever.
     cur = dict_cursor(conn)
     cur.execute(
         """SELECT
@@ -544,16 +503,8 @@ def get_query_outcome_stats(conn, user_id: int, source: str) -> list[dict]:
 
 
 def get_ranked(conn, user_id: int, statuses: list[str], limit: int | None = None) -> list[dict]:
-    """Ranked jobs (any of the given statuses) ordered by listwise_rank — the
-    calibration report's source of truth for precision@K / divergence cases.
-    listwise_rank is only ever 1-20 and freezes the moment a job is decided
-    (re-ranking only touches the live 'new' pool), so after enough decisions many
-    rows share the same rank; the updated_at tiebreak surfaces the most recent
-    ones first instead of an arbitrary (effectively oldest-first) tie order.
-
-    limit is pushed into the query (not applied by slicing the result) so
-    precision@K's SELECT only ever pulls K rows instead of every ranked job
-    the account has ever decided on."""
+    # listwise_rank freezes at decision time and only ever spans 1-20, so many
+    # rows end up sharing a rank; the updated_at tiebreak surfaces recent ones first.
     cur = dict_cursor(conn)
     placeholders = ",".join(["%s"] * len(statuses))
     sql = f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
@@ -568,12 +519,8 @@ def get_ranked(conn, user_id: int, statuses: list[str], limit: int | None = None
 
 
 def get_divergence_cases(conn, user_id: int, limit: int = 50) -> list[dict]:
-    """Ranked jobs where the ranking and the user's decision strongly disagree:
-    rank <=5 but rejected (model overrated it), or rank >=16 but applied (model
-    underrated it) — the strongest learning signal for the preference distiller.
-    Filtered and capped in SQL, most-recent-first, instead of fetching every
-    ever-decided ranked job and discarding most of it in Python: that full scan
-    only grows with account age, since listwise_rank freezes at decision time."""
+    # rank <=5 but rejected means the model overrated it; rank >=16 but applied
+    # means it underrated it - the strongest learning signal for the distiller.
     cur = dict_cursor(conn)
     cur.execute(
         f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
@@ -604,9 +551,7 @@ def count_ranked(conn, user_id: int) -> int:
 
 
 def reset_auto_rejected(conn, user_id: int) -> int:
-    """Reset this user's auto-rejected-with-a-description jobs back to 'new',
-    clearing their score — used before re-running the keyword filter + evaluator
-    with updated criteria."""
+    # Used before re-running the keyword filter + evaluator with updated criteria.
     cur = conn.cursor()
     cur.execute(
         """UPDATE user_job_states ujs SET status = 'new', score = NULL, score_reason = NULL

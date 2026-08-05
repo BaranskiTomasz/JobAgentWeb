@@ -1,7 +1,4 @@
-"""Idempotent schema, safe to run on every startup. job_postings/job_embeddings are
-shared across users (objective facts about a posting); user_job_states and every
-other table are per-user (judgments about a candidate against a posting)."""
-
+# Idempotent schema, safe to run on every startup.
 _SCHEMA = """
     CREATE TABLE IF NOT EXISTS users (
         id            INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -110,11 +107,8 @@ _SCHEMA = """
         cost_usd      REAL DEFAULT 0.0
     );
 
-    -- Guarantee UTC even for a database created before this default existed:
-    -- JobAgent's record_run_summary() compares this column against a UTC
-    -- started_at it generates itself (usage_repository.now_iso()), so a value
-    -- following the server's `timezone` GUC instead of UTC would silently skew
-    -- that comparison on any host not configured to UTC.
+    -- Force UTC for databases created before this default existed, so it
+    -- matches the UTC timestamps record_run_summary() compares it against.
     ALTER TABLE usage_log ALTER COLUMN created_at SET DEFAULT (NOW() AT TIME ZONE 'utc');
 
     CREATE INDEX IF NOT EXISTS idx_usage_log_user_created ON usage_log(user_id, created_at);
@@ -197,51 +191,32 @@ _NEW_COLUMNS = [
     ("preference_profiles", "content_format", "TEXT DEFAULT 'text'"),
     ("preference_profiles", "dismissed_count", "INTEGER DEFAULT 0"),
     ("users", "session_epoch", "INTEGER DEFAULT 0"),
-    # Set only when a collector stage actually finishes successfully — distinct from
-    # finished_at, which every session gets regardless of run type (ranking, rescoring,
-    # etc). _days_since_last_run() must only advance past a real collection, or any
-    # other pipeline action silently narrows the next collection's search window.
+    # Set only when a collector stage actually finishes, distinct from finished_at
+    # (every session gets that regardless of run type).
     ("sessions", "collected_at", "TIMESTAMP"),
     # The posting's own publication date, distinct from created_at (scrape time).
-    # Every collector source parses this already, just to apply --days, then
-    # discarded it — nothing in ranking could tell a 5-week-old posting from one
-    # collected this morning. NULL for postings collected before this existed,
-    # and for sources (LinkedIn) that don't expose a reliable per-posting date.
+    # NULL for postings collected before this existed or for sources that don't expose it.
     ("job_postings", "posted_at", "TIMESTAMP"),
-    # Structured fields (salary, skills, seniority) a source's own API already
-    # provides natively, distinct from structured_data (extractor/runner.py's
-    # Haiku extraction from description text). extractor/runner.py overlays
-    # this on top of Haiku's output — source-native beats LLM guess — rather
-    # than gating extraction eligibility, so Haiku still fills in everything
-    # a source doesn't provide (remote/hybrid, company_type, working_language,
-    # etc). NULL for postings/sources with no such native data.
+    # Structured fields a source's own API provides natively, layered on top of
+    # structured_data's LLM extraction (source-native beats LLM guess).
     ("job_postings", "source_structured_data", "JSONB"),
 ]
 
-# Columns that started as TEXT (holding json.dumps() output, parsed independently
-# by every reader) and are converted to JSONB here for write-time validation —
-# a malformed write now fails loudly instead of silently landing as unparseable
-# text that every future json.loads() call chokes on. Only a type change, so a
-# fresh install already gets JSONB straight from _SCHEMA/_NEW_COLUMNS above;
-# this only has work to do against a database created before this existed.
-# Guarded by an information_schema check (not just re-run every time) because
-# ALTER COLUMN TYPE JSONB USING NULLIF(col, '')::jsonb is not idempotent once
-# the column is already jsonb — NULLIF would then compare a jsonb value
-# against the text literal '', which Postgres can't parse as JSON and errors on.
+# Columns that started as TEXT holding json.dumps() output and are converted to
+# JSONB here for write-time validation. A fresh install already gets JSONB from
+# _SCHEMA/_NEW_COLUMNS above, so this only matters for older databases. Guarded
+# by an information_schema check because re-running the ALTER once the column
+# is already jsonb would fail: NULLIF(jsonb_col, '') can't compare against the
+# text literal ''.
 _JSONB_COLUMNS = [
     ("job_postings", "structured_data"),
     ("job_postings", "source_structured_data"),
     ("user_job_states", "score_breakdown"),
 ]
 
-# Columns removed from _SCHEMA above (so a fresh install never creates them)
-# but that could still exist on a database created before this list existed.
-# candidate_preferences.salary_max/excluded_company_types/preferred_industries/
-# excluded_industries were collected/stored but never read by anything
-# downstream (no consumer in evaluator/profile.py, no UI writer for the latter
-# three) — confirmed empty except for salary_max (6 rows) and
-# excluded_company_types (1 row) on the live database before dropping, real
-# but functionally unused data.
+# Removed from _SCHEMA above (a fresh install never creates them), but could
+# still exist on an older database. These were collected but never read by
+# anything downstream.
 _DROPPED_COLUMNS = [
     ("candidate_preferences", "salary_max"),
     ("candidate_preferences", "excluded_company_types"),
@@ -249,14 +224,11 @@ _DROPPED_COLUMNS = [
     ("candidate_preferences", "excluded_industries"),
 ]
 
-# A typo'd status/type used to just silently vanish from every view that
-# filters on the column instead of failing loudly — these mirror the exact
-# value sets already enforced app-side (Pydantic Literal in models.py,
-# criteria_repo.py's own VALID_TYPES) as a second, DB-level backstop, since
-# raw SQL elsewhere (session status transitions, auto_rejected writes) never
-# goes through those Pydantic models at all. Postgres has no
-# "ADD CONSTRAINT IF NOT EXISTS" for CHECK constraints, so each is wrapped in
-# a DO block that swallows the duplicate_object error on re-run.
+# Mirrors the value sets already enforced app-side (Pydantic Literal in
+# models.py, criteria_repo.py's VALID_TYPES) as a DB-level backstop for raw SQL
+# writes that skip those models entirely. Postgres has no "ADD CONSTRAINT IF
+# NOT EXISTS" for CHECK, so each is wrapped in a DO block below that swallows
+# the duplicate_object error on re-run.
 _CHECK_CONSTRAINTS = [
     (
         "user_job_states", "user_job_states_status_check",
@@ -277,13 +249,11 @@ _CHECK_CONSTRAINTS = [
 ]
 
 
-# Arbitrary id for a session-level advisory lock (not the 2-arg per-user form
-# sessions_repo.py uses — a different lock space entirely, no collision risk).
-# uvicorn runs multiple worker processes, each calling init_db() on startup;
-# without this, two workers running "CREATE INDEX IF NOT EXISTS" concurrently
-# can still hit a duplicate-key error on the underlying catalog entry, since
-# the existence check and the create aren't atomic across separate sessions —
-# observed in production crashing a worker (auto-restarted, but avoidable).
+# Arbitrary lock id, distinct from sessions_repo.py's per-user advisory lock.
+# uvicorn's multiple worker processes each call init_db() on startup; without
+# this, two workers running CREATE INDEX IF NOT EXISTS concurrently can still
+# hit a duplicate-key error, since the check and the create aren't atomic
+# across separate sessions.
 _MIGRATION_LOCK_ID = 913377
 
 

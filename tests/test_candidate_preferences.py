@@ -18,11 +18,9 @@ def test_invalid_field_rejected(logged_in_client):
 
 
 def test_removed_dead_fields_are_rejected(logged_in_client):
-    # Regression: salary_max, excluded_company_types, preferred_industries, and
-    # excluded_industries were collected/stored but never read by anything
-    # downstream (no consumer in evaluator/profile.py, no UI writer for the
-    # latter three) — removed from _JSON_FIELDS/_SCALAR_FIELDS. Confirms they're
-    # actually gone, not just unused.
+    # Regression: these fields were removed from _JSON_FIELDS/_SCALAR_FIELDS
+    # since nothing downstream ever read them. Confirms they're actually
+    # gone, not just unused.
     for field in ("salary_max", "excluded_company_types", "preferred_industries", "excluded_industries"):
         resp = logged_in_client.post("/api/candidate-preferences", json={"fields": {field: 1}})
         assert resp.status_code == 400, f"{field} should have been rejected"
@@ -59,8 +57,7 @@ def test_isolated_per_user(logged_in_client, other_logged_in_client):
 
 def test_activate_nonexistent_404s_and_leaves_active_untouched(logged_in_client):
     # Regression: set_active() used to deactivate the current row before
-    # checking the target id existed — a bad id left zero active rows
-    # while the API reported {"ok": true}.
+    # checking the target id existed, so a bad id left zero active rows.
     pref_id = logged_in_client.post("/api/candidate-preferences", json={"fields": {}}).json()["id"]
     resp = logged_in_client.post("/api/candidate-preferences/999999/activate")
     assert resp.status_code == 404

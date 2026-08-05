@@ -1,17 +1,12 @@
 """Delete job_postings rows with no remaining user_job_states.
 
-job_postings/job_embeddings are shared across users, but nothing ever prunes
-them: the dashboard's "Delete jobs" action only removes the calling user's
-own user_job_states row (deliberately — the posting may still be referenced
-by other users), so a posting orphaned by the last user to reference it just
-sits there forever. Safe to delete: job_id is deterministic from the URL
-(hashlib.md5 in jobs_repo._generate_id), so if the same URL is collected
-again later it gets re-inserted fresh rather than colliding with anything
-here, and dedup against a user's own history is keyed off user_job_states,
-never off job_postings existing. Their job_embeddings row cascades with them
-(FK ON DELETE CASCADE), so a re-collected job pays Voyage re-embedding cost
-again — the reason this is a manual, confirm-first script rather than
-anything scheduled.
+job_postings is shared across users, and the dashboard's "Delete jobs" action
+only ever removes the calling user's own user_job_states row, so a posting
+orphaned by the last user referencing it just sits there forever. Safe to
+delete: job_id is deterministic from the URL, so a re-collected posting gets
+re-inserted fresh rather than colliding with anything. Its job_embeddings row
+cascades too, so a re-collected job pays Voyage re-embedding cost again,
+which is why this stays a manual, confirm-first script rather than scheduled.
 
 Usage:
     POSTGRES_PASSWORD=... python scripts/purge_orphaned_postings.py

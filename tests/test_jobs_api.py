@@ -7,7 +7,7 @@ import jobs_repo
 
 def test_concurrent_insert_of_the_same_new_url_does_not_raise(user, other_user):
     # Regression: this used to be check-then-insert (SELECT, then INSERT if not
-    # found) — two collectors racing on a brand-new URL both saw "not found" and
+    # found), two collectors racing on a brand-new URL both saw "not found" and
     # both tried to INSERT the same deterministic id, so the loser hit a
     # duplicate-key error. In production this was silently swallowed by the
     # collector's generic except-and-skip, leaving that run's user with no state
@@ -105,9 +105,8 @@ def test_create_job_duplicate_for_same_user_is_ignored(logged_in_client):
 
 
 def test_create_job_different_title_company_not_deduped(logged_in_client):
-    """The old title+company dedup heuristic is gone — only url identifies a
-    posting now. A genuinely different posting that happens to share a
-    title+company with an existing one must NOT be silently dropped."""
+    # Only url identifies a posting now, so one sharing a title+company with
+    # an existing posting must NOT be silently deduped away.
     _create(logged_in_client, url="https://example.com/jobs/1")
     second = logged_in_client.post("/api/jobs", json={
         "title": "backend engineer", "company": "acme", "location": "Warsaw",
@@ -237,7 +236,7 @@ def test_update_ranking_batch(logged_in_client):
 
 def test_update_ranking_batch_all_null_optional_columns(logged_in_client):
     # Regression: FROM (VALUES ...) infers each column's type from the literals
-    # across every row in the batch — a column that's NULL in every single row
+    # across every row in the batch, a column that's NULL in every single row
     # (rank_reason/debate_flag/debate_note for jobs outside the listwise-ranked
     # top-20, which is most of rank_jobs.py's own batch on a normal run) risks
     # Postgres picking the wrong type before the SET clause's cast ever applies.
@@ -329,7 +328,7 @@ def test_missing_structured_data_excludes_job_without_description(logged_in_clie
 def test_missing_structured_data_excludes_already_decided_jobs(logged_in_client):
     # Regression: this endpoint used to have no status filter at all, so
     # scripts/extract_jobs.py (JobAgent) re-processed the whole historical pool
-    # every run — reviewed/applied/rejected/auto_rejected jobs never re-enter
+    # every run, reviewed/applied/rejected/auto_rejected jobs never re-enter
     # scoring or ranking, so extracting structured_data for one is pure sunk
     # Haiku cost with no downstream reader.
     for status in ("reviewed", "applied", "rejected", "auto_rejected"):

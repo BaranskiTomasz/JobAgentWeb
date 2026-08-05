@@ -40,7 +40,7 @@ class TestHowItWorksRoute:
         assert "From a CV to a ranked shortlist" in resp.text
 
     def test_logged_out_nav_has_no_dashboard_or_logout_links(self, client):
-        # /preferences is intentionally not checked here — how_it_works.html's
+        # /preferences is intentionally not checked here, how_it_works.html's
         # body text references it inline as part of explaining the pipeline
         # (unrelated to the nav menu this test targets).
         resp = client.get("/how-it-works")

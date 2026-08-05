@@ -12,8 +12,8 @@ def record(conn, user_id: int, session_id: int, source: str, search_query: str, 
 
 
 def get_query_summary(conn, user_id: int, source: str) -> list[dict]:
-    """Per search_query totals across all recorded runs — zero_result_searches counts
-    individual (query, location) calls that found no cards at all, not full runs."""
+    # zero_result_searches counts individual (query, location) calls that found
+    # no cards, not full collector runs.
     cur = dict_cursor(conn)
     cur.execute(
         """SELECT
@@ -35,12 +35,9 @@ _ZERO_YIELD_LOOKBACK_DAYS = 30
 
 
 def get_zero_yield_queries(conn, user_id: int, source: str, min_searches: int) -> list[str]:
-    """search_query values searched at least min_searches times for this source in
-    the trailing _ZERO_YIELD_LOOKBACK_DAYS where every one of those searches found
-    zero *new* jobs. Windowed, not all-time — a niche query finding nothing on any
-    given day is normal (see collector's README), so an all-time count meant five
-    quiet days anywhere in the query's history excluded it permanently, with no way
-    for it to ever recover even after the market picked back up."""
+    # Windowed to the trailing days, not all-time: an all-time count would let a
+    # few quiet days anywhere in a query's history exclude it permanently, with
+    # no way to recover once the market picks back up.
     cur = dict_cursor(conn)
     cur.execute(
         """SELECT search_query

@@ -6,14 +6,8 @@ from db import dict_cursor
 
 
 def get_indexed_ids(conn, user_id: int) -> set[str]:
-    """The embedding itself is shared (a property of the posting, not per-user) —
-    but the RESULT here is scoped to postings this user has a user_job_states row
-    for, i.e. has actually collected/seen. Without this, any account could hit
-    /unindexed or /all-indexed and trigger (and pay Voyage for) embedding every
-    posting in the system, including ones collected only by other users on an
-    invite code they'd never otherwise see. A user who *has* seen a shared
-    posting still benefits from an embedding another user paid for — see
-    test_embeddings_shared_across_users."""
+    # The embedding is shared across every user who's seen the posting, but the
+    # result here is scoped to postings this user has actually collected.
     cur = dict_cursor(conn)
     cur.execute(
         "SELECT je.job_id FROM job_embeddings je JOIN user_job_states ujs ON ujs.job_id = je.job_id WHERE ujs.user_id = %s",
@@ -73,16 +67,9 @@ def get_vectors(conn, user_id: int, job_ids: list[str]) -> dict[str, list[float]
 
 
 def score_by_similarity(conn, user_id: int, ideal: list[float], job_ids: list[str]) -> dict[str, float]:
-    """Cosine similarity of `ideal` against each job_id's vector, computed here
-    instead of shipping raw vectors over HTTP for the caller to score itself.
-    A 1024-dim vector serializes to ~22 KB of JSON — at a couple thousand jobs
-    that's tens of MB shipped (and re-shipped on every retry) just so the
-    caller could immediately reduce each one to a single float; this way only
-    the {job_id: score} result crosses the wire.
-
-    Vectorized as one matrix op instead of a per-row Python loop — at the
-    ranking pool's 2000-job cap this is a single BLAS call over a 2000x1024
-    matrix rather than 2000 separate dot-product-in-a-generator passes."""
+    # Computed here instead of shipping raw vectors over HTTP for the caller to
+    # score itself; at a couple thousand jobs that's tens of MB of vectors for
+    # a result the caller immediately reduces to one float each.
     if not job_ids or not ideal:
         return {}
     vectors = get_vectors(conn, user_id, job_ids)
@@ -106,13 +93,8 @@ _DECISION_VECTOR_LIMIT = 50
 
 
 def get_decision_vectors(conn, user_id: int) -> dict:
-    """Embedding vectors for this user's _DECISION_VECTOR_LIMIT most recent applied
-    / rejected jobs — the basis for the 'ideal job' centroid used in semantic
-    ranking. Capped and most-recent-first, not the full history: an unbounded,
-    unweighted centroid means a decision from a year ago counts exactly as much
-    as one from yesterday, so the centroid can never adapt if the candidate's
-    search intent genuinely shifts (backend → platform, IC → lead) — old
-    decisions just keep diluting new ones forever instead of aging out."""
+    # Capped and most-recent-first, not full history: an unbounded centroid
+    # never lets a candidate's search intent (e.g. backend to platform) shift.
     cur = dict_cursor(conn)
     cur.execute(
         """SELECT je.embedding FROM job_embeddings je JOIN user_job_states ujs ON ujs.job_id = je.job_id

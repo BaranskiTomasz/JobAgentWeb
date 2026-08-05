@@ -6,43 +6,32 @@ from deps import get_current_user
 
 router = APIRouter(prefix="/api/eval", tags=["eval"])
 
-# Mirrors JobAgent's config.WOULD_APPLY["score_floor"] — display-only context for
-# the calibration report, not a value this service enforces itself.
+# Mirrors JobAgent's config.WOULD_APPLY["score_floor"], display-only context
+# for the calibration report, not a value this service enforces itself.
 WOULD_APPLY_SCORE_FLOOR = 7.0
 
-# Mirror JobAgent's ranker/listwise.py FALLBACK_RANK_REASON / OMITTED_RANK_REASON
+# Mirrors JobAgent's ranker/listwise.py FALLBACK_RANK_REASON / OMITTED_RANK_REASON
 # and ranker/exploration.py's EXPLORATION_RANK_REASON_PREFIX (sibling repo, not
-# importable here). A row whose rank_reason matches one of these wasn't placed by
-# the normal deterministic-pipeline + Opus judgment this metric measures — it's
-# either a degraded-run fallback position or a deliberately-injected exploration
-# pick — so it's excluded rather than silently miscounted into a bucket it didn't
-# earn.
-_FALLBACK_RANK_REASON = "[unranked — Opus ranking unavailable this run, showing rerank order]"
-_OMITTED_RANK_REASON = "[omitted by Opus — not in its ranking response, appended at the end]"
+# importable here). A row matching one of these wasn't placed by real Opus
+# judgment, so it's excluded rather than miscounted into a bucket it didn't earn.
+_FALLBACK_RANK_REASON = "[unranked, Opus ranking unavailable this run, showing rerank order]"
+_OMITTED_RANK_REASON = "[omitted by Opus, not in its ranking response, appended at the end]"
 _EXPLORATION_RANK_REASON_PREFIX = "[EXPLORATION] "
 
 # Mirrors JobAgent's config.RANKING["top_n_listwise"] = 20, partitioned into
-# quarters — a clean bucketing of the only rank range the normal (non-exploration)
-# pipeline ever produces.
+# quarters.
 _RANK_BUCKETS = [(1, 5), (6, 10), (11, 15), (16, 20)]
 
 
 def _precision_at_k(conn, user_id: int, k: int) -> dict:
-    """"reviewed" means read-but-undecided (see the dashboard's own status meaning),
-    not a decision — counting it as a positive would credit the ranking for jobs the
-    user never actually validated, so it's excluded entirely, same as divergence_cases.
-
-    "auto_rejected" is excluded for the same reason, one level removed: it isn't
-    a user decision either — it's the pipeline's OWN evaluator (evaluator/runner.py's
-    auto_reject_threshold) or dealbreaker filter rejecting the job before the user
-    ever sees it. Counting it as a validated negative made this metric partly grade
-    the scorer against its own earlier decision about the same job — the same
-    circularity "reviewed" was excluded for, just one hop further removed.
-
-    Kept for backward compatibility (older deployed dashboard builds may still read
-    precision_at_5/10) but superseded by _apply_rate_by_bucket: this only ever
-    reflects the K best-ever-frozen-rank decided jobs across all history, which
-    never grows with more data and never reflects the *current* ranking's quality."""
+    # Only "applied"/"rejected" count as real decisions. "reviewed" is
+    # read-but-undecided, and "auto_rejected" is the pipeline rejecting a job
+    # before the user ever saw it, so counting either would grade the ranking
+    # against a decision the user never actually made.
+    #
+    # Kept for backward compatibility with older dashboard builds, but
+    # superseded by _apply_rate_by_bucket, which grows with more data instead
+    # of freezing on the K best-ever-ranked decided jobs.
     rows = jobs_repo.get_ranked(conn, user_id, ["applied", "rejected"], limit=k)
     if not rows:
         return {"precision_at_k": None, "n_evaluated": 0}
@@ -60,18 +49,10 @@ def _is_excluded_from_bucket_metric(rank_reason: str | None) -> bool:
 
 
 def _apply_rate_by_bucket(conn, user_id: int) -> list[dict]:
-    """Apply-rate per listwise_rank bucket, over ALL decided+ranked jobs (not a
-    fixed top-K slice) — replaces precision@K, which took the K best-ever-frozen
-    ranks across all history and so (a) mixed decisions made under wildly
-    different ranking/preference states, (b) let old well-ranked decided jobs
-    dominate forever since their frozen rank never gets displaced, and (c) never
-    grew with more decision data. This instead reveals whether apply-rate
-    monotonically decreases as rank worsens — the real signal of ranking
-    quality — and its sample size grows with every decision.
-
-    "auto_rejected" excluded, same reasoning as _precision_at_k above: it's the
-    pipeline's own decision, not the user's, so counting it here would grade
-    the scorer partly against itself."""
+    # Apply-rate per listwise_rank bucket, over every decided+ranked job rather
+    # than a fixed top-K slice, so the sample grows with every new decision and
+    # reveals whether apply-rate drops as rank worsens. auto_rejected excluded
+    # for the same reason as _precision_at_k.
     rows = jobs_repo.get_ranked(conn, user_id, ["applied", "rejected"])
     rows = [r for r in rows if not _is_excluded_from_bucket_metric(r.get("rank_reason"))]
 

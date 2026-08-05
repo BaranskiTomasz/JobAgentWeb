@@ -75,7 +75,7 @@ def test_mark_collected_sets_last_collected(logged_in_client):
 
 def test_last_collected_ignores_sessions_that_never_collected(user, logged_in_client, db_conn):
     # Regression: a ranking/rescoring/re-evaluating session finishes 'done' just
-    # like a real collection does — only collected_at (set by mark-collected, not
+    # like a real collection does, only collected_at (set by mark-collected, not
     # by finish()) should move the "since last collection" window forward.
     cur = db_conn.cursor()
     cur.execute(
@@ -105,7 +105,7 @@ def test_last_collected_uses_most_recent_mark(user, logged_in_client, db_conn):
 
 def test_mark_collected_is_scoped_to_the_caller(logged_in_client, other_logged_in_client):
     session_id = logged_in_client.post("/api/sessions").json()["id"]
-    # Another user's session id doesn't exist for this caller — mark-collected is a
+    # Another user's session id doesn't exist for this caller, mark-collected is a
     # no-op UPDATE (0 rows), not a cross-tenant leak.
     other_logged_in_client.post(f"/api/sessions/{session_id}/mark-collected")
     assert other_logged_in_client.get("/api/sessions/last-collected").json()["collected_at"] is None
@@ -130,7 +130,7 @@ def test_finish_writes_utc_regardless_of_session_timezone(user, db_conn):
 
 def test_second_concurrent_start_is_rejected(user):
     # Regression: the only guard against two concurrent runs used to be
-    # _RunGuard, an in-process flag in JobAgent's Flask dashboard — it did
+    # _RunGuard, an in-process flag in JobAgent's Flask dashboard, it did
     # nothing for a run launched directly from a terminal, since
     # collector/runner.py's run() called session_repository.start()
     # unconditionally with no check first. That's exactly how two collectors
@@ -179,7 +179,7 @@ def test_start_allowed_again_after_cancel_active(logged_in_client):
 def test_active_run_still_detected_past_the_old_6_hour_window(user, logged_in_client, db_conn):
     # Regression: a real LinkedIn collector run (stealth-paced, one browser
     # session per description batch) has taken 4+ hours on its own before even
-    # reaching the downstream stages — the old 6h self-heal window left too
+    # reaching the downstream stages, the old 6h self-heal window left too
     # little margin, so a run genuinely still in progress could silently stop
     # being guarded against a second, concurrent one.
     cur = db_conn.cursor()

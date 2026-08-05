@@ -23,10 +23,8 @@ def test_isolated_per_user(logged_in_client, other_logged_in_client):
 
 
 def test_legacy_text_format_returns_empty_signals(user, logged_in_client, db_conn):
-    """Rows written before the JSON-signals format (content_format='text', from
-    before the distillation pipeline switched formats) must not break get_latest()
-    — real production rows in this shape still exist. No API ever writes this
-    shape anymore (save() always writes 'json'), so it's set up directly here."""
+    # content_format='text' rows predate the JSON-signals format and no API
+    # writes them anymore, but real production rows in this shape still exist.
     cur = db_conn.cursor()
     cur.execute(
         "INSERT INTO preference_profiles (user_id, content, content_format, applied_count, rejected_count) "

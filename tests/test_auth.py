@@ -67,9 +67,8 @@ def test_register_short_username_rejected(client):
 
 
 def test_register_shows_multiple_errors_at_once(client):
-    # Regression: this used to be one elif chain — a wrong invite code masked a
-    # too-short password entirely, so fixing the invite code on a second
-    # round trip would just reveal the password error that was there all along.
+    # Regression: this used to be one elif chain, so a wrong invite code
+    # masked a too-short password error entirely.
     resp = client.post("/register", data={
         "username": "newperson", "password": "short", "password_confirm": "short",
         "invite_code": "not-the-real-code",
@@ -133,10 +132,9 @@ def test_login_success_grants_access(client, user):
 
 
 def test_login_strips_whitespace_from_username(client, user):
-    # Regression: register_submit stripped the username before storing/checking,
-    # but login_submit only stripped it for the rate-limit key and passed the
-    # raw value to get_by_username — a stray leading/trailing space (easy to
-    # type by accident) meant a real account couldn't log in.
+    # Regression: login_submit only stripped the username for the rate-limit
+    # key and passed the raw value to get_by_username, so a stray leading or
+    # trailing space meant a real account couldn't log in.
     resp = client.post("/login", data={"username": f"  {user['username']}  ", "password": user["password"]})
     assert resp.status_code in (200, 303)
     assert client.get("/api/jobs/stats").status_code == 200
@@ -180,9 +178,7 @@ def test_protected_route_401_without_session(client):
 
 
 def test_dashboard_shows_public_landing_when_unauthenticated(client):
-    # Superseded: this used to bounce straight to /login with no explanation
-    # of the product at all — see tests/test_main_routes.py for full coverage
-    # of the public_landing.html page this now shows instead.
+    # See tests/test_main_routes.py for full coverage of public_landing.html.
     resp = client.get("/", follow_redirects=False)
     assert resp.status_code == 200
     assert "Register" in resp.text
@@ -196,10 +192,9 @@ def test_logout_clears_session(logged_in_client):
 
 
 def test_logout_revokes_sessions_on_other_devices_too(user, logged_in_client):
-    # Regression: session cookies had no server-side revocation at all — logging
-    # out only cleared the local cookie, so a copied/stolen session.json stayed
-    # valid regardless. session_epoch makes logout actually invalidate every
-    # outstanding cookie for this user, not just the one that logged out.
+    # Regression: session cookies had no server-side revocation, so logging out
+    # only cleared the local cookie and a copied/stolen session stayed valid.
+    # session_epoch makes logout invalidate every outstanding cookie.
     from fastapi.testclient import TestClient
     from main import app
 
@@ -222,16 +217,14 @@ def test_login_rate_limited_after_repeated_attempts(client, monkeypatch):
 
 
 def test_login_rate_limit_is_keyed_by_username_not_ip(client, monkeypatch):
-    # Regression: Caddy's reverse_proxy means every real request arrives from
-    # 127.0.0.1, so an IP-keyed bucket would lock out every user once anyone
-    # mistyped their password 10 times. Keying by username instead means one
-    # account being hammered doesn't touch another's ability to log in — even
-    # though TestClient's fake IP is identical for both calls below.
+    # Regression: an IP-keyed bucket would lock out every user behind Caddy's
+    # loopback IP once anyone mistyped a password 10 times. Keying by username
+    # means one account being hammered doesn't affect another's login.
     monkeypatch.setattr("config.RATE_LIMIT_ENABLED", True)
     for _ in range(10):
         client.post("/login", data={"username": "account-a", "password": "wrong"})
     resp = client.post("/login", data={"username": "account-b", "password": "wrong"})
-    assert resp.status_code == 400  # not 429 — a different username, unaffected
+    assert resp.status_code == 400  # not 429, a different username, unaffected
 
 
 def test_register_rate_limited_after_repeated_attempts(client, monkeypatch):
@@ -257,13 +250,12 @@ def test_login_and_register_are_independent_rate_limit_buckets(client, monkeypat
         "username": "newperson", "password": "goodpassword", "password_confirm": "goodpassword",
         "invite_code": "wrong-code",
     })
-    assert resp.status_code == 400  # not 429 — register's own bucket is untouched
+    assert resp.status_code == 400  # not 429, register's own bucket is untouched
 
 
 class TestJobAgentApiKeyAuth:
     """The trusted-client bypass for the local JobAgent desktop installation
-    (deps.py::get_current_user) — a static key instead of a session cookie, so
-    that one installation never needs interactive re-login."""
+    (deps.py::get_current_user): a static key instead of a session cookie."""
 
     def test_correct_key_grants_access_without_any_login(self, client, user, monkeypatch):
         monkeypatch.setattr("deps.JOBAGENT_API_KEY", "test-shared-secret")
@@ -284,8 +276,7 @@ class TestJobAgentApiKeyAuth:
         assert resp.status_code == 401
 
     def test_bypass_inactive_when_not_configured(self, client, user):
-        # Default state (nothing set in .env) — the header must have no effect
-        # at all, not even a confusing partial match.
+        # Default state (nothing set in .env): the header must have no effect.
         resp = client.get("/api/jobs/stats", headers={"X-JobAgent-Api-Key": "anything"})
         assert resp.status_code == 401
 
@@ -312,10 +303,7 @@ class TestJobAgentApiKeyAuth:
 
     def test_key_cannot_reach_admin_routes_even_when_scoped_to_an_admin_account(self, client, admin_user, monkeypatch):
         # The key is scoped to one account's own automation, not an admin
-        # bypass — even when JOBAGENT_API_KEY_USER_ID happens to point at an
-        # admin (the likely case: the original bootstrap account). A static,
-        # non-expiring secret with no revocation lever besides editing .env +
-        # restarting shouldn't also carry the power to delete other users.
+        # bypass, even when it happens to point at an admin account.
         monkeypatch.setattr("deps.JOBAGENT_API_KEY", "test-shared-secret")
         monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", str(admin_user["id"]))
         resp = client.get("/admin", headers={"X-JobAgent-Api-Key": "test-shared-secret"})
@@ -328,9 +316,7 @@ class TestJobAgentApiKeyAuth:
         assert resp.status_code == 200
 
     def test_bypass_immune_to_session_epoch_logout(self, client, user, db_conn, monkeypatch):
-        # The entire point: a logout-everywhere (session_epoch bump) or an
-        # expired/invalid session cookie must not affect the API-key path at
-        # all — that's the failure mode this bypass exists to route around.
+        # A logout-everywhere (session_epoch bump) must not affect the API-key path.
         import users_repo
         users_repo.bump_session_epoch(db_conn, user["id"])
         db_conn.commit()

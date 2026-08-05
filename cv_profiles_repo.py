@@ -10,7 +10,6 @@ def _deserialize(row) -> dict:
 
 
 def insert(conn, user_id: int, filename: str, raw_text: str, parsed: dict) -> int:
-    """Insert a new CV profile, making it the active one for this user."""
     cur = conn.cursor()
     cur.execute("UPDATE cv_profiles SET is_active = 0 WHERE user_id = %s", (user_id,))
     cur.execute(
@@ -40,9 +39,8 @@ def list_all(conn, user_id: int) -> list[dict]:
 
 
 def set_active(conn, user_id: int, profile_id: int) -> bool:
-    """Returns False (leaving the current active profile untouched) if
-    profile_id doesn't exist or doesn't belong to this user — checked before
-    the deactivate step runs, so a bad id never wipes the real active row."""
+    # Confirm ownership before deactivating anything, so a bad profile_id
+    # can't wipe out the real active row and leave the user with none.
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM cv_profiles WHERE user_id = %s AND id = %s", (user_id, profile_id))
     if cur.fetchone() is None:

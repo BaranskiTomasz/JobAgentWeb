@@ -4,9 +4,8 @@ from db import dict_cursor
 
 
 def log_usage(conn, user_id: int, model: str, module: str, input_tokens: int, output_tokens: int, cost_usd: float) -> None:
-    """Cost is computed client-side (JobAgent knows the Anthropic/Voyage pricing
-    table; this service doesn't call those APIs itself) and passed in already
-    calculated — this just stores it."""
+    # cost_usd arrives already computed: this service never calls the priced
+    # APIs itself, only stores what JobAgent worked out client-side.
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO usage_log (user_id, model, module, input_tokens, output_tokens, cost_usd) VALUES (%s,%s,%s,%s,%s,%s)",
@@ -38,10 +37,8 @@ def get_summary(conn, user_id: int) -> dict:
 
 
 def record_run_summary(conn, user_id: int, run_label: str, started_at: str) -> None:
-    """Snapshot everything logged to usage_log since `started_at` (a pipeline run's
-    start time) into a durable, per-run record. Deliberately never touches or
-    depends on job_postings/user_job_states, so deleting jobs later can't corrupt
-    historical cost figures."""
+    # Never touches job_postings/user_job_states, so deleting jobs later can't
+    # corrupt historical cost figures.
     cur = dict_cursor(conn)
     cur.execute(
         "SELECT model, SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens, "
@@ -77,8 +74,6 @@ def record_run_summary(conn, user_id: int, run_label: str, started_at: str) -> N
 
 
 def get_history(conn, user_id: int) -> list[dict]:
-    """Every recorded run summary for this user, most recent first — the raw
-    per-run breakdown behind get_summary()'s aggregate numbers."""
     cur = dict_cursor(conn)
     cur.execute(
         "SELECT * FROM cost_summaries WHERE user_id = %s ORDER BY started_at DESC",
@@ -91,8 +86,7 @@ def get_history(conn, user_id: int) -> list[dict]:
 
 
 def get_cost_per_100(conn, user_id: int) -> float | None:
-    """Rolling average cost-per-100-jobs-scored across every recorded run for
-    this user — never a function of how many jobs currently exist."""
+    # Rolling average across every recorded run, not tied to current job count.
     cur = dict_cursor(conn)
     cur.execute(
         "SELECT COALESCE(SUM(total_cost_usd),0) AS cost, COALESCE(SUM(jobs_evaluated),0) AS n "

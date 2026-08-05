@@ -2,8 +2,6 @@ from db import dict_cursor
 
 
 def exclude(conn, user_id: int, source: str, search_query: str, reason: str) -> None:
-    """Idempotent — re-excluding an already-excluded query updates its reason
-    instead of erroring, so a re-run with fresher stats keeps the log current."""
     cur = conn.cursor()
     cur.execute(
         """INSERT INTO excluded_search_queries (user_id, source, search_query, reason)
@@ -14,7 +12,6 @@ def exclude(conn, user_id: int, source: str, search_query: str, reason: str) -> 
 
 
 def get_excluded(conn, user_id: int, source: str) -> dict[str, str]:
-    """search_query -> reason, for filtering a source's query list before collection."""
     cur = dict_cursor(conn)
     cur.execute(
         "SELECT search_query, reason FROM excluded_search_queries WHERE user_id = %s AND source = %s",

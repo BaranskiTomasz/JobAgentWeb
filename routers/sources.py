@@ -21,9 +21,8 @@ _DISPLAY_NAMES = {
 
 @router.get("")
 def list_sources(user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    """Distinct sources across this user's own jobs — scoped via user_job_states,
-    not the whole shared pool, so the dropdown only ever offers something the user
-    actually has."""
+    # Scoped to this user's own jobs, not the whole shared pool, so the
+    # dropdown only offers sources the user actually has.
     cur = dict_cursor(conn)
     cur.execute(
         """SELECT DISTINCT jp.source FROM job_postings jp

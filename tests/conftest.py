@@ -1,18 +1,16 @@
 import os
 
-# Dedicated throwaway test DB/role on the VPS Postgres (reachable over the same
-# WireGuard tunnel used for real traffic) — never the production "jobagent" DB.
-# Must be set before `config`/`db` are imported anywhere below.
+# Dedicated throwaway test DB/role on the VPS Postgres, never the production
+# "jobagent" DB. Must be set before `config`/`db` are imported anywhere below.
 os.environ.setdefault("POSTGRES_HOST", "10.66.0.1")
 os.environ.setdefault("POSTGRES_PORT", "5432")
 os.environ.setdefault("POSTGRES_DB", "jobagentweb_test")
 os.environ.setdefault("POSTGRES_USER", "jobagentweb_test")
 os.environ.setdefault("POSTGRES_PASSWORD", "test_only_pw_923nf")
 
-# TestClient talks to the app over a fake "http://testserver" (no real TLS) —
-# a Secure-flagged session cookie would never come back on later requests,
-# silently breaking every login-dependent test. Production always keeps the
-# default (true), since the site is genuinely served over HTTPS there.
+# TestClient talks to the app over a fake "http://testserver" with no real
+# TLS, so a Secure-flagged cookie would never come back on later requests.
+# Production always keeps the default (true).
 os.environ.setdefault("SESSION_HTTPS_ONLY", "false")
 os.environ.setdefault("INVITE_CODE", "test-invite-code")
 os.environ.setdefault("SECRET_KEY", "test-only-secret-key-not-real-923nf")
@@ -56,10 +54,9 @@ def _clean_tables():
 
 @pytest.fixture(autouse=True)
 def _reset_rate_limits():
-    """rate_limit's counters are a module-level dict, not DB state — _clean_tables
-    doesn't touch them, so every test would otherwise share the same in-memory
-    window (keyed by TestClient's fixed fake IP) and could spuriously trip on
-    another test's earlier requests."""
+    # rate_limit's counters are a module-level dict, not DB state, so
+    # _clean_tables doesn't touch them and tests could spuriously trip on
+    # another test's earlier requests otherwise.
     import rate_limit
     rate_limit._attempts.clear()
     yield
@@ -72,8 +69,8 @@ def client():
 
 @pytest.fixture
 def db_conn():
-    """A raw pooled connection for tests that need to set up data no API can
-    produce (e.g. legacy pre-migration row shapes)."""
+    # A raw pooled connection for tests that need to set up data no API can
+    # produce (e.g. legacy pre-migration row shapes).
     conn = db_module._get_pool().getconn()
     try:
         yield conn
@@ -98,15 +95,12 @@ def _insert_user(username: str, password: str, is_admin: bool = False) -> dict:
 
 @pytest.fixture
 def user(_clean_tables) -> dict:
-    """A fresh user row (with a known plaintext password) for tests that need
-    to own data or log in. Depends on _clean_tables so the insert always
-    happens after truncation, not before it."""
+    # Depends on _clean_tables so the insert always happens after truncation.
     return _insert_user("testuser", "testpass123")
 
 
 @pytest.fixture
 def other_user(_clean_tables) -> dict:
-    """A second, distinct user — for tests asserting per-user isolation."""
     return _insert_user("otheruser", "otherpass123")
 
 

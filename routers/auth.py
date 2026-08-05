@@ -27,9 +27,8 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     username = username.strip()
     rate_limit.enforce(request, "login", key=username.lower())
     user = users_repo.get_by_username(conn, username)
-    # Always call verify_password, even for an unknown username — checking against
-    # DUMMY_PASSWORD_HASH keeps the response time the same either way, so timing
-    # alone can't be used to enumerate which usernames exist.
+    # Always call verify_password, even for an unknown username, so the
+    # response time can't be used to enumerate which usernames exist.
     valid = verify_password(password, user["password_hash"] if user else DUMMY_PASSWORD_HASH)
     if not user or not valid:
         return templates.TemplateResponse(
@@ -60,10 +59,8 @@ def register_submit(
     username = username.strip()
     invite_code = invite_code.strip()
 
-    # Independent per-field checks (not one elif chain) so a wrong password AND a
-    # wrong invite code both get reported together — the old chain only ever
-    # showed the first thing it hit, so e.g. a too-short password was invisible
-    # until the (correct) invite code was fixed on a second round trip.
+    # Independent per-field checks, not one elif chain, so a wrong password and
+    # a wrong invite code both get reported in the same round trip.
     errors = []
     if not INVITE_CODE:
         errors.append("Registration is currently closed.")
@@ -81,8 +78,8 @@ def register_submit(
         errors.append("Passwords do not match.")
 
     if errors:
-        # username/invite_code repopulated so a fixable mistake elsewhere doesn't
-        # force retyping everything — passwords are never echoed back.
+        # username/invite_code repopulated so a fixable mistake elsewhere
+        # doesn't force retyping everything; passwords are never echoed back.
         return templates.TemplateResponse(
             request, "register.html",
             {"errors": errors, "username": username, "invite_code": invite_code},
@@ -92,10 +89,9 @@ def register_submit(
     try:
         user_id = users_repo.create(conn, username, hash_password(password))
     except psycopg2.errors.UniqueViolation:
-        # Two concurrent registrations for the same username both pass the
-        # get_by_username check above; the second INSERT trips the unique
-        # constraint instead. get_db()'s commit would fail on this aborted
-        # transaction otherwise, so roll back explicitly before responding.
+        # Two concurrent registrations for the same username can both pass the
+        # get_by_username check above; roll back the aborted transaction
+        # explicitly, since get_db()'s own commit would fail on it otherwise.
         conn.rollback()
         return templates.TemplateResponse(
             request, "register.html",
@@ -111,8 +107,8 @@ def register_submit(
 def logout(request: Request, conn=Depends(get_db)):
     user_id = request.session.get("user_id")
     if user_id is not None:
-        # Bumps the DB epoch so every other outstanding cookie for this user (any
-        # device) stops matching on its next request too — not just this one.
+        # Bumps the DB epoch so every other outstanding cookie for this user,
+        # on any device, stops matching too, not just this one.
         users_repo.bump_session_epoch(conn, user_id)
     request.session.clear()
     return RedirectResponse("/login", status_code=303)

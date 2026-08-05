@@ -8,23 +8,16 @@ from db import get_db
 
 
 def get_current_user(request: Request, conn=Depends(get_db)) -> dict:
-    # Trusted-client bypass: the local JobAgent desktop installation authenticates
-    # with a static key instead of a browser session cookie, so it's immune to
-    # session expiry and the session_epoch logout mechanism below — this is the
-    # one identity that should never need interactive re-login. Scoped to a
-    # single, explicitly configured user_id; only active when both env vars are
-    # set. hmac.compare_digest avoids a timing side-channel on the comparison.
+    # The JobAgent desktop client authenticates with a static key, bypassing
+    # session cookies entirely (so it never needs interactive re-login).
+    # compare_digest avoids leaking key bytes through a timing side-channel.
     if JOBAGENT_API_KEY and JOBAGENT_API_KEY_USER_ID:
         header_key = request.headers.get("X-JobAgent-Api-Key")
         if header_key and hmac.compare_digest(header_key, JOBAGENT_API_KEY):
             user = users_repo.get_by_id(conn, int(JOBAGENT_API_KEY_USER_ID))
             if user is not None:
-                # Marks this request so require_admin below can reject it even
-                # if the configured user_id happens to be an admin — the key is
-                # scoped to one account's own automation, not an admin bypass.
-                # A static, non-expiring secret with no revocation lever besides
-                # editing .env + restarting is exactly the kind of credential
-                # that shouldn't also carry the ability to delete other users.
+                # A static, non-expiring key shouldn't also grant admin rights,
+                # even if the account it's scoped to happens to be an admin.
                 request.state.trusted_client = True
                 return user
 
@@ -33,14 +26,11 @@ def get_current_user(request: Request, conn=Depends(get_db)) -> dict:
         raise HTTPException(status_code=401, detail="Not authenticated")
     user = users_repo.get_by_id(conn, user_id)
     if user is None:
-        # Session points at a user that no longer exists (e.g. deleted by an
-        # admin) — drop the stale session instead of leaving it around.
         request.session.clear()
         raise HTTPException(status_code=401, detail="Not authenticated")
     if request.session.get("session_epoch") != user["session_epoch"]:
-        # A logout (this device or another) bumped the DB epoch since this
-        # cookie was issued — the signed cookie itself is still cryptographically
-        # valid, so this is the only way "logged out" actually takes effect.
+        # The signed cookie is still cryptographically valid after a logout;
+        # bumping the DB epoch is what actually makes "logged out" take effect.
         request.session.clear()
         raise HTTPException(status_code=401, detail="Not authenticated")
     return user

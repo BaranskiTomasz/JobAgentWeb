@@ -44,7 +44,7 @@ class TestPruneSessions:
     def test_skips_an_old_session_with_search_stats_attached(self, user, db_conn):
         # Regression guard: search_stats.session_id is ON DELETE RESTRICT, and
         # search_stats itself is deliberately never pruned (it's an all-time
-        # aggregate) — a session with search_stats attached must survive.
+        # aggregate), a session with search_stats attached must survive.
         cur = db_conn.cursor()
         cur.execute(
             "INSERT INTO sessions (user_id, status, finished_at) VALUES (%s, 'done', %s) RETURNING id",

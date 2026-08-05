@@ -6,19 +6,13 @@ _SESSION_LOCK_NAMESPACE = 8711
 
 
 class SessionAlreadyActiveError(Exception):
-    """Raised by start() when the user already has a running session. The only
-    guard against two concurrent runs used to be _RunGuard, an in-process flag
-    in JobAgent's Flask dashboard — it did nothing for a run launched directly
-    from a terminal (collector/runner.py's run() called session_repository.start()
-    unconditionally), which is exactly how two collectors ended up racing on the
-    same user's data in production."""
+    """Raised by start() when the user already has a running session."""
 
 
 def start(conn, user_id: int) -> int:
     cur = conn.cursor()
-    # Held for this transaction only (released on commit/rollback when the
-    # request ends), not for the run's duration — just enough to make the
-    # check-then-insert below atomic against another concurrent start().
+    # Held for this transaction only, just enough to make the check-then-insert
+    # below atomic against another concurrent start().
     cur.execute("SELECT pg_advisory_xact_lock(%s, %s)", (_SESSION_LOCK_NAMESPACE, user_id))
     if has_active_run(conn, user_id):
         raise SessionAlreadyActiveError()
@@ -27,11 +21,9 @@ def start(conn, user_id: int) -> int:
 
 
 def finish(conn, user_id: int, session_id: int, jobs_found: int, jobs_scored: int, status: str = "done") -> None:
-    # finished_at must be UTC regardless of this Postgres session/server's timezone
-    # setting: JobAgent's _days_since_last_run() parses it and diffs it against its
-    # own datetime.utcnow() with no timezone conversion, so a naive CURRENT_TIMESTAMP
-    # value (which follows the server's `timezone` GUC, not necessarily UTC) would
-    # silently skew that math on any host not configured to UTC.
+    # Force UTC regardless of the server's timezone setting: JobAgent diffs this
+    # against its own naive utcnow(), so a server-local CURRENT_TIMESTAMP would
+    # skew that math on any host not configured to UTC.
     cur = conn.cursor()
     cur.execute(
         """UPDATE sessions
@@ -51,19 +43,10 @@ def cancel_active(conn, user_id: int) -> None:
 
 
 def has_active_run(conn, user_id: int) -> bool:
-    """True if a session started within the last 24 hours is still running.
-
-    This window exists so a crashed run (killed without ever reaching finish())
-    doesn't lock the account out of starting a new one forever — it self-heals
-    once the window passes, at the cost of not guarding against a genuine
-    concurrent-run race after that. 6 hours used to be that window, sized for a
-    normal run; a real LinkedIn collector run (stealth-paced, one browser
-    session per description batch) has since taken 4+ hours on its own before
-    even reaching the downstream stages, which left too little margin — a run
-    that was still legitimately in progress could silently stop being guarded
-    against a second, concurrent one. 24h trades a slower self-heal for that
-    margin; see cancel_active() for reclaiming sooner when you know a run is
-    actually dead."""
+    # True if a session started within the last 24 hours is still running. This
+    # window lets a crashed run (killed without reaching finish()) self-heal
+    # instead of locking the account out forever; see cancel_active() to
+    # reclaim sooner when a run is known to be dead.
     cur = dict_cursor(conn)
     cur.execute(
         "SELECT id FROM sessions WHERE user_id = %s AND status = 'running' AND started_at > NOW() - INTERVAL '24 hours'",
@@ -83,10 +66,8 @@ def get_last_finished_at(conn, user_id: int):
 
 
 def mark_collected(conn, user_id: int, session_id: int) -> None:
-    """Records that this session's collector stage actually finished
-    successfully — distinct from finish()'s finished_at, which every session
-    gets regardless of whether it ever collected anything (ranking, rescoring,
-    etc never do). See get_last_collected_at()."""
+    # Distinct from finish()'s finished_at, which every session gets even if
+    # it never actually collected anything (ranking, rescoring, etc).
     cur = conn.cursor()
     cur.execute(
         "UPDATE sessions SET collected_at = (NOW() AT TIME ZONE 'utc') WHERE user_id = %s AND id = %s",
@@ -95,11 +76,8 @@ def mark_collected(conn, user_id: int, session_id: int) -> None:
 
 
 def get_last_collected_at(conn, user_id: int):
-    """What _days_since_last_run() should actually read: the last time
-    collection genuinely succeeded, not just the last time any pipeline
-    session finished. Using get_last_finished_at() here would silently narrow
-    the next collection's search window every time a non-collector action
-    (ranking, rescoring, re-evaluating) runs after the last real collection."""
+    # get_last_finished_at() would narrow the next collection's search window
+    # every time a non-collector action (ranking, rescoring) runs afterward.
     cur = dict_cursor(conn)
     cur.execute(
         "SELECT collected_at FROM sessions WHERE user_id = %s AND collected_at IS NOT NULL "

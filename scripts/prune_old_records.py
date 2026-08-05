@@ -1,20 +1,8 @@
 """Delete old rows from tables that otherwise grow forever with no cleanup path.
 
-Deliberately narrower than it might first look — two tables were considered and
-left out:
-
-- usage_log: cost_summaries is meant to be its rollup, but checked against
-  production this same week and found genuinely incomplete for at least one
-  real account (the preference distiller logs usage outside any tracked run's
-  window) — pruning usage_log would silently corrupt the displayed all-time
-  cost total. Needs the rollup fixed first, not a retention script.
-- search_stats: search_stats_repo.get_query_summary() is an explicit
-  all-time aggregate ("Per search_query totals across all recorded runs") —
-  pruning it would silently shrink that number, the same class of problem as
-  usage_log above.
-
-What this script does prune, each independently safe (see the comment above
-each block):
+usage_log and search_stats are deliberately left out: both back an all-time
+aggregate (cost_summaries, get_query_summary()) that pruning would silently
+shrink.
 
 Usage:
     POSTGRES_PASSWORD=... python scripts/prune_old_records.py
@@ -32,13 +20,9 @@ from config import POSTGRES
 _SESSIONS_MAX_AGE_DAYS = 90
 _PREFERENCE_PROFILES_KEEP_PER_USER = 5
 
-# Only finished sessions, never 'running' (an active or crash-stuck run must
-# stay visible to has_active_run()/cancel-active). Skips any session that
-# still has search_stats rows referencing it (FK is ON DELETE RESTRICT, and
-# search_stats itself is deliberately not pruned here — see module docstring)
-# — this means sessions from an actual collector run are not reclaimed by
-# this script, only the ones from other pipeline actions (ranking,
-# rescoring, etc), which never write search_stats.
+# Never 'running' (a stuck run must stay visible to has_active_run()) and
+# never one with search_stats still attached (FK is ON DELETE RESTRICT, and
+# search_stats is deliberately not pruned here, see module docstring).
 _SESSIONS_WHERE = f"""
     status != 'running'
     AND finished_at < NOW() - INTERVAL '{_SESSIONS_MAX_AGE_DAYS} days'
@@ -72,8 +56,8 @@ def _prune_sessions(cur, confirm_yes: bool) -> int:
 
 
 def _prune_preference_profiles(cur, confirm_yes: bool) -> int:
-    # get_latest() only ever reads the single newest row per user — keeping a
-    # handful more than that is pure margin, not a functional requirement.
+    # get_latest() only ever reads the single newest row per user, so keeping
+    # a handful more is pure margin, not a functional requirement.
     cur.execute(
         """SELECT COUNT(*) AS n FROM preference_profiles pp
            WHERE (

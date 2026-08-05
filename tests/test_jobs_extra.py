@@ -11,7 +11,7 @@ def _create(client, **overrides):
 def test_get_all_urls_is_scoped_to_the_caller(logged_in_client, other_logged_in_client):
     # Regression: this used to be system-wide, which meant most collector
     # sources (skip-if-known-url) silently never even tried to insert a
-    # posting another user had already found — the shared pool never got
+    # posting another user had already found, the shared pool never got
     # shared. Each user's known-urls set must reflect only their own state.
     _create(logged_in_client, url="https://example.com/jobs/a")
     _create(other_logged_in_client, url="https://example.com/jobs/b")
@@ -24,7 +24,7 @@ def test_get_all_urls_includes_a_shared_posting_once_this_user_links_it(logged_i
     _create(logged_in_client, url="https://example.com/jobs/shared")
     assert other_logged_in_client.get("/api/jobs/urls").json()["urls"] == []
 
-    # Second user reuses the same posting — insert() links it to their own state.
+    # Second user reuses the same posting, insert() links it to their own state.
     _create(other_logged_in_client, url="https://example.com/jobs/shared")
     assert other_logged_in_client.get("/api/jobs/urls").json()["urls"] == ["https://example.com/jobs/shared"]
 
@@ -54,7 +54,7 @@ def test_update_description_is_shared(logged_in_client, other_logged_in_client):
 def test_update_description_is_write_once(logged_in_client, other_logged_in_client):
     # Regression: any user who links to a shared posting could otherwise
     # overwrite its description at will, corrupting it for every other user
-    # who's found the same URL — with no ownership check at all.
+    # who's found the same URL, with no ownership check at all.
     job_id = _create(logged_in_client, description="Original text.")["job_id"]
     other_logged_in_client.post("/api/jobs", json={
         "title": "Backend Engineer", "company": "Acme", "location": "Remote",
@@ -128,7 +128,7 @@ def test_examples_and_feedback(logged_in_client):
 
 def test_feedback_respects_limit_params(logged_in_client):
     # Regression: get_all_feedback() shipped every applied/rejected job's full
-    # description unconditionally — preference_agent/runner.py only ever used
+    # description unconditionally, preference_agent/runner.py only ever used
     # the 50 most recent rejected (and, before this fix, an unbounded number of
     # applied). Most-recent-first ordering means the limit keeps the newest.
     ids = []
@@ -145,7 +145,7 @@ def test_feedback_respects_limit_params(logged_in_client):
 def test_feedback_includes_decided_at(logged_in_client):
     # Regression: applied/rejected examples had no timestamp at all, so
     # preference_agent/runner.py's distiller couldn't tell a 6-month-old
-    # decision from yesterday's — no way to express a reversed preference.
+    # decision from yesterday's, no way to express a reversed preference.
     applied_id = _create(logged_in_client, url="https://example.com/jobs/decided-a")["job_id"]
     rejected_id = _create(logged_in_client, url="https://example.com/jobs/decided-b")["job_id"]
     logged_in_client.patch(f"/api/jobs/{applied_id}/status", json={"status": "applied"})

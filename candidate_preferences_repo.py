@@ -2,8 +2,8 @@ import json
 
 from db import dict_cursor
 
-# List-valued fields, stored as JSON text — matches the convention already used by
-# job_postings.structured_data and cv_profiles.parsed.
+# List-valued fields, stored as JSON text (this table predates the JSONB columns
+# elsewhere; cv_profiles.parsed still follows the same TEXT convention).
 _JSON_FIELDS = {
     "work_mode", "remote_countries", "hybrid_cities", "seniority_levels", "role_types",
     "preferred_company_types", "extra_tech", "avoided_tech", "languages",
@@ -32,9 +32,6 @@ def _deserialize(row) -> dict:
 
 
 def insert(conn, user_id: int, cv_profile_id: int | None, fields: dict | None = None) -> int:
-    """Create a new active preferences snapshot for this user, deactivating any
-    previous one. `fields` may include any subset of the known columns — every
-    question is optional, so an empty dict (or omitting it) creates a blank snapshot."""
     data = _serialize(fields or {})
     data["user_id"] = user_id
     data["cv_profile_id"] = cv_profile_id
@@ -71,9 +68,8 @@ def list_all(conn, user_id: int) -> list[dict]:
 
 
 def set_active(conn, user_id: int, pref_id: int) -> bool:
-    """Returns False (leaving the current active row untouched) if pref_id
-    doesn't exist or doesn't belong to this user — checked before the
-    deactivate step runs, so a bad id never wipes the real active row."""
+    # Confirm ownership before deactivating anything, so a bad pref_id can't
+    # wipe out the real active row and leave the user with none.
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM candidate_preferences WHERE user_id = %s AND id = %s", (user_id, pref_id))
     if cur.fetchone() is None:

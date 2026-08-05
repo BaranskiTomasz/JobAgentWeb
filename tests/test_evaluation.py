@@ -34,7 +34,7 @@ class TestPrecisionAtK:
 
     def test_auto_rejected_is_not_a_user_decision_and_is_excluded(self, logged_in_client):
         # auto_rejected is the pipeline's own decision (evaluator's score threshold
-        # or the dealbreaker filter), not the user's — counting it as a validated
+        # or the dealbreaker filter), not the user's, counting it as a validated
         # negative would grade the scorer partly against its own earlier verdict on
         # the same job. Same exclusion reasoning as "reviewed" above.
         _insert_ranked(logged_in_client, "auto_rejected", 1)
@@ -55,7 +55,7 @@ class TestPrecisionAtK:
         assert [r["id"] for r in rows] == [newer, older]
 
     def test_reviewed_is_not_a_decision_and_is_excluded(self, logged_in_client):
-        # "reviewed" means read-but-undecided — it must not enter the K pool at all,
+        # "reviewed" means read-but-undecided, it must not enter the K pool at all,
         # positive or negative (the exact bug this test guards against: it used to
         # count as a positive decision).
         _insert_ranked(logged_in_client, "reviewed", 1)
@@ -121,18 +121,18 @@ class TestApplyRateByBucket:
 
     def test_fallback_rank_reason_is_excluded_from_buckets(self, logged_in_client):
         # A FALLBACK_RANK_REASON row's position comes from rerank order, not Opus
-        # judgment — counting it would credit/blame the wrong stage of the pipeline.
+        # judgment, counting it would credit/blame the wrong stage of the pipeline.
         job_id = _insert_ranked(logged_in_client, "applied", 1)
         logged_in_client.patch(f"/api/jobs/{job_id}/ranking", json={
             "embedding_score": 0.8, "rerank_score": 0.8, "listwise_rank": 1,
-            "rank_reason": "[unranked — Opus ranking unavailable this run, showing rerank order]",
+            "rank_reason": "[unranked, Opus ranking unavailable this run, showing rerank order]",
         })
         buckets = logged_in_client.get("/api/eval/report").json()["apply_rate_by_bucket"]
         assert all(b["n"] == 0 for b in buckets)
 
     def test_exploration_pick_is_excluded_from_buckets(self, logged_in_client):
         # An exploration slot's rank reflects pool composition (a randomly
-        # injected outsider), not the normal deterministic pipeline's judgment —
+        # injected outsider), not the normal deterministic pipeline's judgment ,
         # same exclusion reasoning as the fallback/omitted sentinels.
         job_id = _insert_ranked(logged_in_client, "applied", 2)
         logged_in_client.patch(f"/api/jobs/{job_id}/ranking", json={

@@ -1,10 +1,5 @@
-"""Minimal in-memory rate limiter for auth endpoints. No Redis in this stack and
-this runs on a single small VPS, so a per-process fixed window is enough to
-blunt brute-force/username-enumeration attempts without adding an external
-dependency. Not perfectly enforced across uvicorn's multiple worker processes
-(each keeps its own counters), but still meaningfully raises the cost of
-guessing either way.
-"""
+# In-memory fixed-window limiter, per uvicorn worker process (no shared store
+# behind it), which is enough to blunt brute-force/enumeration on a small VPS.
 import threading
 import time
 from collections import defaultdict, deque
@@ -16,11 +11,8 @@ import config
 _WINDOW_SECONDS = 60
 _MAX_ATTEMPTS = 10
 
-# Fallback sweep threshold — an abandoned key (a username tried exactly once,
-# e.g. during enumeration) has no request left to prune it via enforce()'s own
-# per-key check below, so it would otherwise sit at zero attempts forever in a
-# long-lived worker process. Only scanned once the dict actually grows large,
-# so this costs nothing under normal, bounded traffic.
+# A key tried only once (e.g. one enumeration attempt) never gets pruned by
+# enforce()'s own per-key check, so sweep the whole dict once it grows large.
 _MAX_TRACKED_KEYS = 10_000
 
 _lock = threading.Lock()
@@ -28,14 +20,10 @@ _attempts: dict[str, deque] = defaultdict(deque)
 
 
 def enforce(request: Request, bucket: str, key: str | None = None) -> None:
-    """Raises 429 if `key` has hit `bucket` too many times recently. `key`
-    defaults to the connecting IP — fine for /register (rare, and Caddy's
-    reverse_proxy means every real request arrives from 127.0.0.1 anyway, so
-    IP-keying there just means "not too many registration attempts at once",
-    which is the actual goal). /login passes the submitted username instead:
-    keying that one by IP would bucket every real user together behind
-    Caddy's loopback connection, so one person mistyping a password would
-    lock everyone else out too."""
+    # key defaults to the connecting IP, but /login passes the submitted
+    # username instead: every real request arrives from Caddy's loopback IP,
+    # so IP-keying there would lock out every user whenever one mistypes a
+    # password.
     if not config.RATE_LIMIT_ENABLED:
         return
     if key is None:
@@ -47,7 +35,7 @@ def enforce(request: Request, bucket: str, key: str | None = None) -> None:
         while hits and now - hits[0] > _WINDOW_SECONDS:
             hits.popleft()
         if len(hits) >= _MAX_ATTEMPTS:
-            raise HTTPException(status_code=429, detail="Too many attempts — try again in a minute.")
+            raise HTTPException(status_code=429, detail="Too many attempts, try again in a minute.")
         hits.append(now)
         if len(_attempts) > _MAX_TRACKED_KEYS:
             _evict_stale_keys(now)

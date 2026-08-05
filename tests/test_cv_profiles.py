@@ -36,9 +36,8 @@ def test_no_active_profile_404(logged_in_client):
 
 
 def test_activate_nonexistent_profile_404s_and_leaves_active_untouched(logged_in_client):
-    # Regression: set_active() used to unconditionally deactivate the current
-    # active row before checking whether the target id existed — a bad id
-    # silently left the user with zero active profiles while reporting {"ok": true}.
+    # Regression: set_active() used to deactivate the current row before
+    # checking whether the target id existed, leaving zero active profiles.
     profile_id = logged_in_client.post("/api/cv-profiles", json={
         "filename": "a.pdf", "raw_text": "A", "parsed": {},
     }).json()["id"]

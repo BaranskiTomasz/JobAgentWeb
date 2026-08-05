@@ -34,8 +34,8 @@ def test_upsert_is_idempotent_replace(logged_in_client):
 def test_unindexed_and_all_indexed(logged_in_client):
     # /unindexed and /all-indexed are scoped to postings this caller has a
     # user_job_states row for (the embedding itself is still a shared property
-    # of the posting — see test_embeddings_shared_across_users) and job_postings
-    # is never truncated between tests — assert membership, not exact set
+    # of the posting, see test_embeddings_shared_across_users) and job_postings
+    # is never truncated between tests, assert membership, not exact set
     # equality, since other tests may leave their own unrelated jobs behind.
     with_desc = _create(logged_in_client, url="https://example.com/jobs/a")
     no_desc = _create(logged_in_client, url="https://example.com/jobs/b", description=None)
@@ -56,7 +56,7 @@ def test_unindexed_and_all_indexed(logged_in_client):
 
 
 def test_unindexed_and_all_indexed_exclude_postings_the_caller_has_never_seen(logged_in_client, other_logged_in_client):
-    # Regression: the audit's exact finding — before this scope, any account
+    # Regression: the audit's exact finding, before this scope, any account
     # could hit /unindexed and pay Voyage to embed every posting in the
     # system, including ones only some other user (on a different invite
     # code) ever collected and has no relation to at all.
@@ -75,7 +75,7 @@ def test_unindexed_and_all_indexed_exclude_postings_the_caller_has_never_seen(lo
 
 def test_vectors_excludes_postings_the_caller_has_never_seen(logged_in_client, other_logged_in_client):
     # Regression: /vectors took job_ids from the caller with no ownership check
-    # at all — unlike /unindexed and /all-indexed, which were already scoped.
+    # at all, unlike /unindexed and /all-indexed, which were already scoped.
     # A caller could pull the embedding of any posting in the system just by
     # guessing/enumerating its md5-of-url job_id.
     other_job = _create(other_logged_in_client, url="https://example.com/jobs/vectors-other-only")
@@ -106,7 +106,7 @@ def test_embeddings_shared_across_users(logged_in_client, other_logged_in_client
         "title": "Backend Engineer", "company": "Acme", "location": "Remote",
         "url": "https://example.com/jobs/1", "source": "linkedin",
     })
-    # Second user's collector doesn't need to re-embed — the vector is already there.
+    # Second user's collector doesn't need to re-embed, the vector is already there.
     ids = other_logged_in_client.get("/api/embeddings/ids").json()["job_ids"]
     assert ids == [job_id]
 
@@ -128,8 +128,8 @@ def test_decision_vectors_scoped_per_user(logged_in_client, other_logged_in_clie
 
 def test_decision_vectors_capped_to_most_recent(logged_in_client):
     # Regression: an unbounded, unweighted centroid means a decision from a year
-    # ago counts exactly as much as yesterday's — old decisions never age out.
-    # 55 applied jobs, decided in order — only the 50 most recent should come back.
+    # ago counts exactly as much as yesterday's, old decisions never age out.
+    # 55 applied jobs, decided in order, only the 50 most recent should come back.
     from embeddings_repo import _DECISION_VECTOR_LIMIT
     total = _DECISION_VECTOR_LIMIT + 5
     for i in range(total):
@@ -153,7 +153,7 @@ def test_requires_login(client):
 
 def test_similarity_computed_server_side(logged_in_client):
     # Regression: the old flow shipped raw vectors over HTTP for the caller to
-    # score itself — a 1024-dim vector is ~22 KB of JSON, tens of MB at a
+    # score itself, a 1024-dim vector is ~22 KB of JSON, tens of MB at a
     # couple thousand jobs. /similarity returns only the reduced {job_id: score}.
     identical = _create(logged_in_client, url="https://example.com/jobs/sim-identical")
     orthogonal = _create(logged_in_client, url="https://example.com/jobs/sim-orthogonal")
@@ -192,7 +192,7 @@ def test_similarity_zero_vector_scores_zero_not_nan(logged_in_client):
 
 def test_similarity_batch_matches_each_job_to_its_own_score(logged_in_client):
     # Regression guard for the numpy rewrite: scoring is now one matrix op over
-    # every vector at once instead of a per-row Python loop — confirms results
+    # every vector at once instead of a per-row Python loop, confirms results
     # still line up with the right job_id after batching, not just for N=1..3.
     jobs = []
     for i in range(12):

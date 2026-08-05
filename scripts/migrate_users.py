@@ -8,13 +8,11 @@ machine, against the real `jobagent` Postgres over the WireGuard tunnel:
 
 Idempotent-ish: uses ON CONFLICT DO NOTHING / IF NOT EXISTS everywhere, and
 checks for an existing bootstrap user before creating one, so a re-run after a
-partial failure picks up roughly where it left off. It is NOT safe to run
-against a database that's already been migrated by a *different* run of this
-script (e.g. two different bootstrap usernames) — take a pg_dump backup before
-running, as documented in the migration plan, and don't run this twice with
-different assumptions.
+partial failure picks up roughly where it left off. Not safe to run twice with
+different assumptions (e.g. two different bootstrap usernames) - take a
+pg_dump backup before running.
 
-The bootstrap user's password_hash is a placeholder — there's no registration
+The bootstrap user's password_hash is a placeholder, there's no registration
 flow yet (that's Phase B). Set a real password for this account once
 login/registration exists, before relying on it to authenticate.
 """
@@ -29,7 +27,7 @@ from config import POSTGRES
 BOOTSTRAP_USERNAME = "tobiasz"
 
 # Tables that get a plain `user_id` column added and backfilled to the
-# bootstrap user. job_embeddings is deliberately excluded — it stays shared,
+# bootstrap user. job_embeddings is deliberately excluded, it stays shared,
 # only its job_id FK gets re-pointed at job_postings (see _repoint_job_fk).
 TABLES_WITH_USER_ID = [
     "criteria", "sessions", "cv_profiles", "preference_profiles", "usage_log",
@@ -243,7 +241,7 @@ def main():
     print(f"  job_postings      = {postings_n}")
     print(f"  user_job_states   = {states_n} (for bootstrap user)")
     if not (old_n == postings_n == states_n):
-        sys.exit(f"\nMISMATCH — not renaming old `jobs` table. Investigate before re-running.")
+        sys.exit("\nMISMATCH, not renaming old `jobs` table. Investigate before re-running.")
 
     print("\nSpot-checking a JSON column (score_breakdown) survived intact...")
     cur.execute("SELECT id, score_breakdown FROM jobs WHERE score_breakdown IS NOT NULL LIMIT 1")
@@ -255,8 +253,8 @@ def main():
         )
         migrated = cur.fetchone()["score_breakdown"]
         if migrated != sample["score_breakdown"]:
-            sys.exit(f"MISMATCH in score_breakdown for job {sample['id']} — not renaming old `jobs` table.")
-        print(f"  OK — job {sample['id']} score_breakdown matches.")
+            sys.exit(f"MISMATCH in score_breakdown for job {sample['id']}, not renaming old `jobs` table.")
+        print(f"  OK, job {sample['id']} score_breakdown matches.")
 
     cur.execute("ALTER TABLE jobs RENAME TO jobs_deprecated_backup")
     conn.commit()
