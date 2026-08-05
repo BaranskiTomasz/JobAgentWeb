@@ -73,7 +73,12 @@ def _require_user(request: Request, conn) -> dict | None:
 def dashboard(request: Request, view: str | None = None, conn=Depends(get_db)):
     user = _require_user(request, conn)
     if user is None:
-        return RedirectResponse("/login", status_code=303)
+        # A logged-out visitor's first contact with the product used to be a bare
+        # login form with one 43-word paragraph — bouncing straight past any
+        # explanation of what this even is. This is a genuine marketing/explainer
+        # page, distinct from landing.html (which assumes an already-logged-in,
+        # zero-jobs account and addresses the user by username).
+        return templates.TemplateResponse(request, "public_landing.html", {"user": None})
     stats = jobs_repo.get_stats(conn, user["id"])
     if stats["total"] == 0 and view != "dashboard":
         return templates.TemplateResponse(request, "landing.html", {"user": user})
@@ -82,9 +87,10 @@ def dashboard(request: Request, view: str | None = None, conn=Depends(get_db)):
 
 @app.get("/how-it-works", response_class=HTMLResponse)
 def how_it_works(request: Request, conn=Depends(get_db)):
+    # Reachable logged-out too — the pitch on public_landing.html links here for
+    # more detail, and a visitor deciding whether to register shouldn't have to
+    # register first just to read how the pipeline works.
     user = _require_user(request, conn)
-    if user is None:
-        return RedirectResponse("/login", status_code=303)
     return templates.TemplateResponse(request, "how_it_works.html", {"user": user})
 
 

@@ -44,7 +44,7 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
 def register_page(request: Request):
     if request.session.get("user_id"):
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse(request, "register.html", {"error": None})
+    return templates.TemplateResponse(request, "register.html", {"errors": [], "username": "", "invite_code": ""})
 
 
 @router.post("/register", response_class=HTMLResponse)
@@ -58,22 +58,36 @@ def register_submit(
 ):
     rate_limit.enforce(request, "register")
     username = username.strip()
-    error = None
-    if not INVITE_CODE:
-        error = "Registration is currently closed."
-    elif invite_code.strip() != INVITE_CODE:
-        error = "Invalid invite code."
-    elif len(username) < 3:
-        error = "Username must be at least 3 characters."
-    elif len(password) < 8:
-        error = "Password must be at least 8 characters."
-    elif password != password_confirm:
-        error = "Passwords do not match."
-    elif users_repo.get_by_username(conn, username):
-        error = "That username is already taken."
+    invite_code = invite_code.strip()
 
-    if error:
-        return templates.TemplateResponse(request, "register.html", {"error": error}, status_code=400)
+    # Independent per-field checks (not one elif chain) so a wrong password AND a
+    # wrong invite code both get reported together — the old chain only ever
+    # showed the first thing it hit, so e.g. a too-short password was invisible
+    # until the (correct) invite code was fixed on a second round trip.
+    errors = []
+    if not INVITE_CODE:
+        errors.append("Registration is currently closed.")
+    elif invite_code != INVITE_CODE:
+        errors.append("Invalid invite code.")
+
+    if len(username) < 3:
+        errors.append("Username must be at least 3 characters.")
+    elif users_repo.get_by_username(conn, username):
+        errors.append("That username is already taken.")
+
+    if len(password) < 8:
+        errors.append("Password must be at least 8 characters.")
+    elif password != password_confirm:
+        errors.append("Passwords do not match.")
+
+    if errors:
+        # username/invite_code repopulated so a fixable mistake elsewhere doesn't
+        # force retyping everything — passwords are never echoed back.
+        return templates.TemplateResponse(
+            request, "register.html",
+            {"errors": errors, "username": username, "invite_code": invite_code},
+            status_code=400,
+        )
 
     try:
         user_id = users_repo.create(conn, username, hash_password(password))
@@ -84,7 +98,9 @@ def register_submit(
         # transaction otherwise, so roll back explicitly before responding.
         conn.rollback()
         return templates.TemplateResponse(
-            request, "register.html", {"error": "That username is already taken."}, status_code=400,
+            request, "register.html",
+            {"errors": ["That username is already taken."], "username": username, "invite_code": invite_code},
+            status_code=400,
         )
     request.session["user_id"] = user_id
     request.session["session_epoch"] = 0  # matches the users.session_epoch column default

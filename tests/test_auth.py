@@ -66,6 +66,45 @@ def test_register_short_username_rejected(client):
     assert "at least 3 characters" in resp.text
 
 
+def test_register_shows_multiple_errors_at_once(client):
+    # Regression: this used to be one elif chain — a wrong invite code masked a
+    # too-short password entirely, so fixing the invite code on a second
+    # round trip would just reveal the password error that was there all along.
+    resp = client.post("/register", data={
+        "username": "newperson", "password": "short", "password_confirm": "short",
+        "invite_code": "not-the-real-code",
+    })
+    assert resp.status_code == 400
+    assert "Invalid invite code" in resp.text
+    assert "at least 8 characters" in resp.text
+
+
+def test_register_repopulates_username_and_invite_code_on_error(client):
+    # Regression: every field (including username and the correctly-typed
+    # invite code) used to be wiped on any error, forcing a full retype.
+    resp = client.post("/register", data={
+        "username": "newperson", "password": "short", "password_confirm": "short",
+        "invite_code": "test-invite-code",
+    })
+    assert resp.status_code == 400
+    assert 'value="newperson"' in resp.text
+    assert 'value="test-invite-code"' in resp.text
+
+
+def test_register_never_repopulates_password_fields(client):
+    resp = client.post("/register", data={
+        "username": "newperson", "password": "short", "password_confirm": "short",
+        "invite_code": "test-invite-code",
+    })
+    assert "short" not in resp.text
+
+
+def test_register_page_get_has_empty_username_field(client):
+    resp = client.get("/register")
+    assert resp.status_code == 200
+    assert 'id="username" name="username" required autofocus autocomplete="username" minlength="3" value=""' in resp.text
+
+
 def test_register_duplicate_username_rejected(client, user):
     resp = client.post("/register", data={
         "username": user["username"], "password": "anotherpassword", "password_confirm": "anotherpassword",
@@ -140,10 +179,13 @@ def test_protected_route_401_without_session(client):
     assert client.get("/api/jobs/would-apply-stats").status_code == 401
 
 
-def test_dashboard_redirects_to_login_when_unauthenticated(client):
+def test_dashboard_shows_public_landing_when_unauthenticated(client):
+    # Superseded: this used to bounce straight to /login with no explanation
+    # of the product at all — see tests/test_main_routes.py for full coverage
+    # of the public_landing.html page this now shows instead.
     resp = client.get("/", follow_redirects=False)
-    assert resp.status_code == 303
-    assert resp.headers["location"] == "/login"
+    assert resp.status_code == 200
+    assert "Register" in resp.text
 
 
 def test_logout_clears_session(logged_in_client):

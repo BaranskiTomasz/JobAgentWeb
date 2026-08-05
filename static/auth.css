@@ -18,6 +18,10 @@
   background: color-mix(in srgb, #c0392b 15%, transparent); border: 1px solid color-mix(in srgb, #c0392b 40%, transparent);
   color: #c0392b; border-radius: 9px; padding: 9px 12px; font-size: 0.84rem; margin-bottom: 14px;
 }
+.auth-error ul { margin: 0; padding-left: 18px; }
+.auth-error li { margin: 2px 0; }
+
+.auth-hint { color: var(--ink-soft); font-size: 0.76rem; margin: 5px 0 0; line-height: 1.4; }
 
 .auth-submit { width: 100%; justify-content: center; margin-top: 4px; }
 
