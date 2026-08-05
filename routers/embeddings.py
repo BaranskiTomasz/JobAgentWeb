@@ -10,17 +10,17 @@ router = APIRouter(prefix="/api/embeddings", tags=["embeddings"])
 
 @router.get("/ids")
 def indexed_ids(user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    return {"job_ids": list(embeddings_repo.get_indexed_ids(conn))}
+    return {"job_ids": list(embeddings_repo.get_indexed_ids(conn, user["id"]))}
 
 
 @router.get("/unindexed")
 def unindexed(user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    return embeddings_repo.get_unindexed(conn)
+    return embeddings_repo.get_unindexed(conn, user["id"])
 
 
 @router.get("/all-indexed")
 def all_indexed(user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    return embeddings_repo.get_all_indexed(conn)
+    return embeddings_repo.get_all_indexed(conn, user["id"])
 
 
 @router.post("")

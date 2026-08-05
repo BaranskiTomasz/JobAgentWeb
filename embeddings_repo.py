@@ -5,31 +5,45 @@ import numpy as np
 from db import dict_cursor
 
 
-def get_indexed_ids(conn) -> set[str]:
-    """Shared, not user-scoped — embeddings are a property of the posting."""
+def get_indexed_ids(conn, user_id: int) -> set[str]:
+    """The embedding itself is shared (a property of the posting, not per-user) —
+    but the RESULT here is scoped to postings this user has a user_job_states row
+    for, i.e. has actually collected/seen. Without this, any account could hit
+    /unindexed or /all-indexed and trigger (and pay Voyage for) embedding every
+    posting in the system, including ones collected only by other users on an
+    invite code they'd never otherwise see. A user who *has* seen a shared
+    posting still benefits from an embedding another user paid for — see
+    test_embeddings_shared_across_users."""
     cur = dict_cursor(conn)
-    cur.execute("SELECT job_id FROM job_embeddings")
+    cur.execute(
+        "SELECT je.job_id FROM job_embeddings je JOIN user_job_states ujs ON ujs.job_id = je.job_id WHERE ujs.user_id = %s",
+        (user_id,),
+    )
     return {r["job_id"] for r in cur.fetchall()}
 
 
-def get_unindexed(conn) -> list[dict]:
+def get_unindexed(conn, user_id: int) -> list[dict]:
     cur = dict_cursor(conn)
     cur.execute("""
         SELECT jp.id, jp.title, jp.company, jp.location, jp.description
         FROM job_postings jp
+        JOIN user_job_states ujs ON ujs.job_id = jp.id
         LEFT JOIN job_embeddings je ON je.job_id = jp.id
-        WHERE jp.description IS NOT NULL AND jp.description != '' AND je.job_id IS NULL
+        WHERE ujs.user_id = %s AND jp.description IS NOT NULL AND jp.description != '' AND je.job_id IS NULL
         ORDER BY jp.created_at DESC
-    """)
+    """, (user_id,))
     return [dict(r) for r in cur.fetchall()]
 
 
-def get_all_indexed(conn) -> list[dict]:
+def get_all_indexed(conn, user_id: int) -> list[dict]:
     cur = dict_cursor(conn)
     cur.execute("""
         SELECT jp.id, jp.title, jp.company, jp.location, jp.description, jp.source
-        FROM job_postings jp JOIN job_embeddings je ON je.job_id = jp.id
-    """)
+        FROM job_postings jp
+        JOIN user_job_states ujs ON ujs.job_id = jp.id
+        JOIN job_embeddings je ON je.job_id = jp.id
+        WHERE ujs.user_id = %s
+    """, (user_id,))
     return [dict(r) for r in cur.fetchall()]
 
 

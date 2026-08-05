@@ -32,10 +32,11 @@ def test_upsert_is_idempotent_replace(logged_in_client):
 
 
 def test_unindexed_and_all_indexed(logged_in_client):
-    # get_unindexed/get_all_indexed are deliberately unscoped (embeddings are a
-    # property of the shared posting, not per-user) and job_postings is never
-    # truncated between tests — assert membership, not exact set equality,
-    # since other tests may leave their own unrelated unembedded jobs behind.
+    # /unindexed and /all-indexed are scoped to postings this caller has a
+    # user_job_states row for (the embedding itself is still a shared property
+    # of the posting — see test_embeddings_shared_across_users) and job_postings
+    # is never truncated between tests — assert membership, not exact set
+    # equality, since other tests may leave their own unrelated jobs behind.
     with_desc = _create(logged_in_client, url="https://example.com/jobs/a")
     no_desc = _create(logged_in_client, url="https://example.com/jobs/b", description=None)
 
@@ -52,6 +53,24 @@ def test_unindexed_and_all_indexed(logged_in_client):
     all_indexed_ids = {j["id"] for j in logged_in_client.get("/api/embeddings/all-indexed").json()}
     assert with_desc in all_indexed_ids
     assert no_desc not in all_indexed_ids
+
+
+def test_unindexed_and_all_indexed_exclude_postings_the_caller_has_never_seen(logged_in_client, other_logged_in_client):
+    # Regression: the audit's exact finding — before this scope, any account
+    # could hit /unindexed and pay Voyage to embed every posting in the
+    # system, including ones only some other user (on a different invite
+    # code) ever collected and has no relation to at all.
+    other_job = _create(other_logged_in_client, url="https://example.com/jobs/other-users-only")
+
+    unindexed_ids = {j["id"] for j in logged_in_client.get("/api/embeddings/unindexed").json()}
+    assert other_job not in unindexed_ids
+
+    other_logged_in_client.post("/api/embeddings", json={
+        "items": [{"job_id": other_job, "embedding": [0.3], "model": "voyage-3-large"}],
+    })
+    all_indexed_ids = {j["id"] for j in logged_in_client.get("/api/embeddings/all-indexed").json()}
+    assert other_job not in all_indexed_ids
+    assert other_job not in logged_in_client.get("/api/embeddings/ids").json()["job_ids"]
 
 
 def test_embeddings_shared_across_users(logged_in_client, other_logged_in_client):
