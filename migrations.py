@@ -218,6 +218,21 @@ _NEW_COLUMNS = [
     ("job_postings", "source_structured_data", "TEXT"),
 ]
 
+# Columns removed from _SCHEMA above (so a fresh install never creates them)
+# but that could still exist on a database created before this list existed.
+# candidate_preferences.salary_max/excluded_company_types/preferred_industries/
+# excluded_industries were collected/stored but never read by anything
+# downstream (no consumer in evaluator/profile.py, no UI writer for the latter
+# three) — confirmed empty except for salary_max (6 rows) and
+# excluded_company_types (1 row) on the live database before dropping, real
+# but functionally unused data.
+_DROPPED_COLUMNS = [
+    ("candidate_preferences", "salary_max"),
+    ("candidate_preferences", "excluded_company_types"),
+    ("candidate_preferences", "preferred_industries"),
+    ("candidate_preferences", "excluded_industries"),
+]
+
 
 # Arbitrary id for a session-level advisory lock (not the 2-arg per-user form
 # sessions_repo.py uses — a different lock space entirely, no collision risk).
@@ -238,6 +253,10 @@ def init_db(conn) -> None:
 
         for table, column, type_sql in _NEW_COLUMNS:
             cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {type_sql}")
+            conn.commit()
+
+        for table, column in _DROPPED_COLUMNS:
+            cur.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS {column}")
             conn.commit()
     finally:
         cur.execute("SELECT pg_advisory_unlock(%s)", (_MIGRATION_LOCK_ID,))
