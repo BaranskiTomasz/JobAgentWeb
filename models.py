@@ -14,6 +14,7 @@ class JobOut(BaseModel):
     source_id: str | None
     search_query: str | None
     posted_at: datetime | None
+    source_structured_data: str | None
     status: str
     score: float | None
     score_reason: str | None
@@ -42,6 +43,7 @@ class JobCreate(BaseModel):
     description: str | None = None
     search_query: str | None = None
     posted_at: str | None = None
+    source_structured_data: dict | None = None
 
 
 class JobCreateResult(BaseModel):

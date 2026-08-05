@@ -212,6 +212,14 @@ _NEW_COLUMNS = [
     # collected this morning. NULL for postings collected before this existed,
     # and for sources (LinkedIn) that don't expose a reliable per-posting date.
     ("job_postings", "posted_at", "TIMESTAMP"),
+    # Structured fields (salary, skills, seniority) a source's own API already
+    # provides natively, distinct from structured_data (extractor/runner.py's
+    # Haiku extraction from description text). extractor/runner.py overlays
+    # this on top of Haiku's output — source-native beats LLM guess — rather
+    # than gating extraction eligibility, so Haiku still fills in everything
+    # a source doesn't provide (remote/hybrid, company_type, working_language,
+    # etc). NULL for postings/sources with no such native data.
+    ("job_postings", "source_structured_data", "TEXT"),
 ]
 
 

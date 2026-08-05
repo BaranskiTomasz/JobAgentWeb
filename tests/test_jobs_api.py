@@ -1,3 +1,4 @@
+import json
 import threading
 
 import db as db_module
@@ -75,6 +76,18 @@ def test_create_job_stores_posted_at(logged_in_client):
     result = _create(logged_in_client, posted_at="2026-07-01T00:00:00")
     resp = logged_in_client.get(f"/api/jobs/{result['job_id']}")
     assert resp.json()["posted_at"].startswith("2026-07-01")
+
+
+def test_create_job_stores_source_structured_data(logged_in_client):
+    result = _create(logged_in_client, source_structured_data={"salary_min": 15000, "salary_currency": "PLN"})
+    resp = logged_in_client.get(f"/api/jobs/{result['job_id']}")
+    assert json.loads(resp.json()["source_structured_data"]) == {"salary_min": 15000, "salary_currency": "PLN"}
+
+
+def test_create_job_without_source_structured_data_is_null(logged_in_client):
+    result = _create(logged_in_client)
+    resp = logged_in_client.get(f"/api/jobs/{result['job_id']}")
+    assert resp.json()["source_structured_data"] is None
 
 
 def test_create_job_duplicate_for_same_user_is_ignored(logged_in_client):
