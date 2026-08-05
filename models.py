@@ -1,6 +1,9 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
+
+_JOB_STATUSES = Literal["new", "reviewed", "applied", "rejected", "auto_rejected"]
 
 
 class JobOut(BaseModel):
@@ -52,7 +55,7 @@ class JobCreateResult(BaseModel):
 
 
 class JobStatusUpdate(BaseModel):
-    status: str
+    status: _JOB_STATUSES
     rejection_reason: str | None = None
 
 
@@ -90,7 +93,7 @@ class JobDescriptionUpdate(BaseModel):
 class JobScoreAndStatusUpdate(BaseModel):
     score: float | None
     reason: str
-    status: str
+    status: _JOB_STATUSES
     breakdown: dict | None = None
 
 
@@ -139,7 +142,7 @@ class CVProfileCreate(BaseModel):
 # ── Criteria ─────────────────────────────────────────────────────────────────
 
 class CriteriaCreate(BaseModel):
-    type: str
+    type: Literal["title", "location", "required", "preferred", "rejected", "search_query"]
     value: str
 
 
@@ -170,7 +173,7 @@ class CandidatePreferencesUpdate(BaseModel):
 # ── Dismissed score items ────────────────────────────────────────────────────
 
 class DismissedItemCreate(BaseModel):
-    item_type: str
+    item_type: Literal["pro", "con"]
     item_text: str
     reason: str
 
@@ -199,7 +202,7 @@ class SearchStatRecord(BaseModel):
 class SessionFinish(BaseModel):
     jobs_found: int = 0
     jobs_scored: int = 0
-    status: str = "done"
+    status: Literal["done", "error", "done_with_errors"] = "done"
 
 
 # ── Usage / cost ─────────────────────────────────────────────────────────────

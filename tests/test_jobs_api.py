@@ -185,6 +185,14 @@ def test_update_status_unknown_job_404(logged_in_client):
     assert resp.status_code == 404
 
 
+def test_update_status_rejects_unknown_value(logged_in_client):
+    # Regression: a typo'd status used to write straight through and just
+    # silently vanish from every view that filters on the column.
+    result = _create(logged_in_client)
+    resp = logged_in_client.patch(f"/api/jobs/{result['job_id']}/status", json={"status": "aplied"})
+    assert resp.status_code == 422
+
+
 def test_update_score(logged_in_client):
     result = _create(logged_in_client)
     resp = logged_in_client.patch(f"/api/jobs/{result['job_id']}/score", json={

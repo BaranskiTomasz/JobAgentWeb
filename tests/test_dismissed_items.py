@@ -26,6 +26,14 @@ def test_dismiss_unknown_job_404(logged_in_client):
     assert resp.status_code == 404
 
 
+def test_dismiss_rejects_unknown_item_type(logged_in_client):
+    job_id = _create_job(logged_in_client)
+    resp = logged_in_client.post(f"/api/jobs/{job_id}/dismiss-item", json={
+        "item_type": "neutral", "item_text": "x", "reason": "y",
+    })
+    assert resp.status_code == 422
+
+
 def test_recent_and_count(logged_in_client):
     job_id = _create_job(logged_in_client)
     logged_in_client.post(f"/api/jobs/{job_id}/dismiss-item", json={

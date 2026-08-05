@@ -233,6 +233,33 @@ _DROPPED_COLUMNS = [
     ("candidate_preferences", "excluded_industries"),
 ]
 
+# A typo'd status/type used to just silently vanish from every view that
+# filters on the column instead of failing loudly — these mirror the exact
+# value sets already enforced app-side (Pydantic Literal in models.py,
+# criteria_repo.py's own VALID_TYPES) as a second, DB-level backstop, since
+# raw SQL elsewhere (session status transitions, auto_rejected writes) never
+# goes through those Pydantic models at all. Postgres has no
+# "ADD CONSTRAINT IF NOT EXISTS" for CHECK constraints, so each is wrapped in
+# a DO block that swallows the duplicate_object error on re-run.
+_CHECK_CONSTRAINTS = [
+    (
+        "user_job_states", "user_job_states_status_check",
+        "CHECK (status IN ('new', 'reviewed', 'applied', 'rejected', 'auto_rejected'))",
+    ),
+    (
+        "sessions", "sessions_status_check",
+        "CHECK (status IN ('running', 'done', 'cancelled', 'error', 'done_with_errors'))",
+    ),
+    (
+        "criteria", "criteria_type_check",
+        "CHECK (type IN ('title', 'location', 'required', 'preferred', 'rejected', 'search_query'))",
+    ),
+    (
+        "dismissed_score_items", "dismissed_score_items_item_type_check",
+        "CHECK (item_type IN ('pro', 'con'))",
+    ),
+]
+
 
 # Arbitrary id for a session-level advisory lock (not the 2-arg per-user form
 # sessions_repo.py uses — a different lock space entirely, no collision risk).
@@ -257,6 +284,15 @@ def init_db(conn) -> None:
 
         for table, column in _DROPPED_COLUMNS:
             cur.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS {column}")
+            conn.commit()
+
+        for table, name, check_sql in _CHECK_CONSTRAINTS:
+            cur.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE {table} ADD CONSTRAINT {name} {check_sql};
+                EXCEPTION WHEN duplicate_object THEN NULL;
+                END $$;
+            """)
             conn.commit()
     finally:
         cur.execute("SELECT pg_advisory_unlock(%s)", (_MIGRATION_LOCK_ID,))

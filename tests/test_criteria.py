@@ -10,8 +10,10 @@ def test_create_and_list(logged_in_client):
 
 
 def test_invalid_type_rejected(logged_in_client):
+    # 422 (Pydantic Literal validation), not 400 — the model now rejects an
+    # unknown type before the request ever reaches criteria_repo.py's own check.
     resp = logged_in_client.post("/api/criteria", json={"type": "nonsense", "value": "x"})
-    assert resp.status_code == 400
+    assert resp.status_code == 422
 
 
 def test_duplicate_same_user_ignored(logged_in_client):

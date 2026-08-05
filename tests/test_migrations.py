@@ -44,6 +44,52 @@ def test_concurrent_init_db_does_not_raise():
     assert errors == []
 
 
+def test_check_constraints_reject_invalid_values():
+    # Regression: status/type columns had no DB-level validation at all — a
+    # typo'd value written via raw SQL (session status transitions,
+    # auto_rejected writes) bypassed the Pydantic Literal checks entirely and
+    # just silently vanished from every view filtering on the column.
+    import uuid
+
+    import psycopg2
+
+    conn = db_module._get_pool().getconn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO users (username, password_hash) VALUES (%s, 'x') RETURNING id",
+            (f"check-constraint-test-{uuid.uuid4()}",),
+        )
+        user_id = cur.fetchone()[0]
+        cur.execute(
+            "INSERT INTO job_postings (id, title, url) VALUES (%s, 'x', %s) RETURNING id",
+            (str(uuid.uuid4()), f"https://example.com/{uuid.uuid4()}"),
+        )
+        job_id = cur.fetchone()[0]
+        conn.commit()
+
+        cases = [
+            ("INSERT INTO user_job_states (user_id, job_id, status) VALUES (%s, %s, %s)", (user_id, job_id, "bogus")),
+            ("INSERT INTO sessions (user_id, status) VALUES (%s, %s)", (user_id, "bogus")),
+            ("INSERT INTO criteria (user_id, type, value) VALUES (%s, %s, 'x')", (user_id, "bogus")),
+            (
+                "INSERT INTO dismissed_score_items (user_id, job_id, item_type, item_text, reason) "
+                "VALUES (%s, %s, %s, 'x', 'y')",
+                (user_id, job_id, "bogus"),
+            ),
+        ]
+        for sql, params in cases:
+            try:
+                cur.execute(sql, params)
+                assert False, f"accepted an invalid value: {sql}"
+            except psycopg2.errors.CheckViolation:
+                pass
+            finally:
+                conn.rollback()
+    finally:
+        db_module._get_pool().putconn(conn)
+
+
 def test_dropped_columns_are_actually_gone():
     # Regression: salary_max/excluded_company_types/preferred_industries/
     # excluded_industries were collected/stored but never read by anything
