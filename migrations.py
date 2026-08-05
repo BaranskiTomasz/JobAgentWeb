@@ -206,6 +206,12 @@ _NEW_COLUMNS = [
     # etc). _days_since_last_run() must only advance past a real collection, or any
     # other pipeline action silently narrows the next collection's search window.
     ("sessions", "collected_at", "TIMESTAMP"),
+    # The posting's own publication date, distinct from created_at (scrape time).
+    # Every collector source parses this already, just to apply --days, then
+    # discarded it — nothing in ranking could tell a 5-week-old posting from one
+    # collected this morning. NULL for postings collected before this existed,
+    # and for sources (LinkedIn) that don't expose a reliable per-posting date.
+    ("job_postings", "posted_at", "TIMESTAMP"),
 ]
 
 

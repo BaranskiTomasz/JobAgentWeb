@@ -68,6 +68,13 @@ def test_create_job(logged_in_client):
     assert job["title"] == "Backend Engineer"
     assert job["status"] == "new"
     assert job["would_apply"] is None
+    assert job["posted_at"] is None
+
+
+def test_create_job_stores_posted_at(logged_in_client):
+    result = _create(logged_in_client, posted_at="2026-07-01T00:00:00")
+    resp = logged_in_client.get(f"/api/jobs/{result['job_id']}")
+    assert resp.json()["posted_at"].startswith("2026-07-01")
 
 
 def test_create_job_duplicate_for_same_user_is_ignored(logged_in_client):

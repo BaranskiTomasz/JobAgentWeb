@@ -8,7 +8,7 @@ from db import dict_cursor
 # Explicit aliases: both tables have an `id` column, and `jp.*, ujs.*` would let one clobber the other.
 _JOB_COLUMNS = """
     jp.id, jp.title, jp.company, jp.location, jp.url, jp.description, jp.source,
-    jp.source_id, jp.search_query, jp.structured_data,
+    jp.source_id, jp.search_query, jp.structured_data, jp.posted_at,
     jp.created_at AS posting_created_at, jp.updated_at AS posting_updated_at,
     ujs.status, ujs.score, ujs.score_reason, ujs.score_breakdown, ujs.rejection_reason,
     ujs.embedding_score, ujs.rerank_score, ujs.listwise_rank, ujs.rank_reason,
@@ -49,13 +49,13 @@ def insert(conn, user_id: int, job: dict) -> dict:
         # table and both are deterministic from the same url, so a genuine
         # concurrent race can trip either one depending on timing — targeting
         # just one (e.g. "ON CONFLICT (url)") leaves the other race window open.
-        """INSERT INTO job_postings (id, title, company, location, url, description, source, source_id, search_query)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """INSERT INTO job_postings (id, title, company, location, url, description, source, source_id, search_query, posted_at)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            ON CONFLICT DO NOTHING
            RETURNING id""",
         (job_id, job["title"], job.get("company"), job.get("location"), job["url"],
          job.get("description"), job.get("source", "linkedin"), job.get("source_id"),
-         job.get("search_query")),
+         job.get("search_query"), job.get("posted_at")),
     )
     posting_created = cur.fetchone() is not None
 
