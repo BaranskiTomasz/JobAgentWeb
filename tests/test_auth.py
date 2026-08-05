@@ -310,6 +310,23 @@ class TestJobAgentApiKeyAuth:
         resp = client.get("/api/jobs/stats", headers={"X-JobAgent-Api-Key": "test-shared-secret"})
         assert resp.status_code == 401
 
+    def test_key_cannot_reach_admin_routes_even_when_scoped_to_an_admin_account(self, client, admin_user, monkeypatch):
+        # The key is scoped to one account's own automation, not an admin
+        # bypass — even when JOBAGENT_API_KEY_USER_ID happens to point at an
+        # admin (the likely case: the original bootstrap account). A static,
+        # non-expiring secret with no revocation lever besides editing .env +
+        # restarting shouldn't also carry the power to delete other users.
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY", "test-shared-secret")
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", str(admin_user["id"]))
+        resp = client.get("/admin", headers={"X-JobAgent-Api-Key": "test-shared-secret"})
+        assert resp.status_code == 403
+
+    def test_real_admin_session_still_reaches_admin_routes(self, admin_client):
+        # Regression guard for the fix above: a genuine logged-in admin session
+        # (no API key involved at all) must be unaffected.
+        resp = admin_client.get("/admin")
+        assert resp.status_code == 200
+
     def test_bypass_immune_to_session_epoch_logout(self, client, user, db_conn, monkeypatch):
         # The entire point: a logout-everywhere (session_epoch bump) or an
         # expired/invalid session cookie must not affect the API-key path at

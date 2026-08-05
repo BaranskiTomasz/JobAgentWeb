@@ -19,6 +19,13 @@ def get_current_user(request: Request, conn=Depends(get_db)) -> dict:
         if header_key and hmac.compare_digest(header_key, JOBAGENT_API_KEY):
             user = users_repo.get_by_id(conn, int(JOBAGENT_API_KEY_USER_ID))
             if user is not None:
+                # Marks this request so require_admin below can reject it even
+                # if the configured user_id happens to be an admin — the key is
+                # scoped to one account's own automation, not an admin bypass.
+                # A static, non-expiring secret with no revocation lever besides
+                # editing .env + restarting is exactly the kind of credential
+                # that shouldn't also carry the ability to delete other users.
+                request.state.trusted_client = True
                 return user
 
     user_id = request.session.get("user_id")
@@ -39,7 +46,9 @@ def get_current_user(request: Request, conn=Depends(get_db)) -> dict:
     return user
 
 
-def require_admin(user: dict = Depends(get_current_user)) -> dict:
+def require_admin(request: Request, user: dict = Depends(get_current_user)) -> dict:
+    if getattr(request.state, "trusted_client", False):
+        raise HTTPException(status_code=403, detail="Admin only")
     if not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Admin only")
     return user
