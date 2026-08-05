@@ -31,12 +31,12 @@ def upsert(body: EmbeddingBatchUpsert, user: dict = Depends(get_current_user), c
 
 @router.post("/vectors")
 def vectors(body: EmbeddingVectorsRequest, user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    return embeddings_repo.get_vectors(conn, body.job_ids)
+    return embeddings_repo.get_vectors(conn, user["id"], body.job_ids)
 
 
 @router.post("/similarity")
 def similarity(body: EmbeddingSimilarityRequest, user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    return embeddings_repo.score_by_similarity(conn, body.ideal, body.job_ids)
+    return embeddings_repo.score_by_similarity(conn, user["id"], body.ideal, body.job_ids)
 
 
 @router.get("/decision-vectors")

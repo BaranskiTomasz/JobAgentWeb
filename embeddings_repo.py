@@ -58,16 +58,21 @@ def upsert_many(conn, items: list[dict]) -> int:
     return len(items)
 
 
-def get_vectors(conn, job_ids: list[str]) -> dict[str, list[float]]:
+def get_vectors(conn, user_id: int, job_ids: list[str]) -> dict[str, list[float]]:
     if not job_ids:
         return {}
     cur = dict_cursor(conn)
     placeholders = ",".join(["%s"] * len(job_ids))
-    cur.execute(f"SELECT job_id, embedding FROM job_embeddings WHERE job_id IN ({placeholders})", job_ids)
+    cur.execute(
+        f"""SELECT je.job_id, je.embedding FROM job_embeddings je
+            JOIN user_job_states ujs ON ujs.job_id = je.job_id
+            WHERE ujs.user_id = %s AND je.job_id IN ({placeholders})""",
+        (user_id, *job_ids),
+    )
     return {r["job_id"]: json.loads(r["embedding"]) for r in cur.fetchall()}
 
 
-def score_by_similarity(conn, ideal: list[float], job_ids: list[str]) -> dict[str, float]:
+def score_by_similarity(conn, user_id: int, ideal: list[float], job_ids: list[str]) -> dict[str, float]:
     """Cosine similarity of `ideal` against each job_id's vector, computed here
     instead of shipping raw vectors over HTTP for the caller to score itself.
     A 1024-dim vector serializes to ~22 KB of JSON — at a couple thousand jobs
@@ -80,7 +85,7 @@ def score_by_similarity(conn, ideal: list[float], job_ids: list[str]) -> dict[st
     matrix rather than 2000 separate dot-product-in-a-generator passes."""
     if not job_ids or not ideal:
         return {}
-    vectors = get_vectors(conn, job_ids)
+    vectors = get_vectors(conn, user_id, job_ids)
     if not vectors:
         return {}
 

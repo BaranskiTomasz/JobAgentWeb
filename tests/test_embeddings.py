@@ -73,6 +73,30 @@ def test_unindexed_and_all_indexed_exclude_postings_the_caller_has_never_seen(lo
     assert other_job not in logged_in_client.get("/api/embeddings/ids").json()["job_ids"]
 
 
+def test_vectors_excludes_postings_the_caller_has_never_seen(logged_in_client, other_logged_in_client):
+    # Regression: /vectors took job_ids from the caller with no ownership check
+    # at all — unlike /unindexed and /all-indexed, which were already scoped.
+    # A caller could pull the embedding of any posting in the system just by
+    # guessing/enumerating its md5-of-url job_id.
+    other_job = _create(other_logged_in_client, url="https://example.com/jobs/vectors-other-only")
+    other_logged_in_client.post("/api/embeddings", json={
+        "items": [{"job_id": other_job, "embedding": [0.4, 0.1], "model": "voyage-3-large"}],
+    })
+    vectors = logged_in_client.post("/api/embeddings/vectors", json={"job_ids": [other_job]}).json()
+    assert vectors == {}
+
+
+def test_similarity_excludes_postings_the_caller_has_never_seen(logged_in_client, other_logged_in_client):
+    other_job = _create(other_logged_in_client, url="https://example.com/jobs/similarity-other-only")
+    other_logged_in_client.post("/api/embeddings", json={
+        "items": [{"job_id": other_job, "embedding": [1.0, 0.0], "model": "voyage-3-large"}],
+    })
+    scores = logged_in_client.post("/api/embeddings/similarity", json={
+        "ideal": [1.0, 0.0], "job_ids": [other_job],
+    }).json()
+    assert scores == {}
+
+
 def test_embeddings_shared_across_users(logged_in_client, other_logged_in_client):
     job_id = _create(logged_in_client)
     logged_in_client.post("/api/embeddings", json={
