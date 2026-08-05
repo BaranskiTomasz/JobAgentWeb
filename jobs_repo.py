@@ -6,11 +6,16 @@ from psycopg2.extras import execute_values
 from db import dict_cursor
 
 # Explicit aliases: both tables have an `id` column, and `jp.*, ujs.*` would let one clobber the other.
+# structured_data/source_structured_data/score_breakdown are stored as JSONB
+# (write-time validation) but cast back to text on the way out — every
+# consumer, in this codebase and in JobAgent, already does its own
+# json.loads() on these fields, so the HTTP API's string contract is kept
+# unchanged rather than pushing that migration onto every caller.
 _JOB_COLUMNS = """
     jp.id, jp.title, jp.company, jp.location, jp.url, jp.description, jp.source,
-    jp.source_id, jp.search_query, jp.structured_data, jp.posted_at, jp.source_structured_data,
+    jp.source_id, jp.search_query, jp.structured_data::text, jp.posted_at, jp.source_structured_data::text,
     jp.created_at AS posting_created_at, jp.updated_at AS posting_updated_at,
-    ujs.status, ujs.score, ujs.score_reason, ujs.score_breakdown, ujs.rejection_reason,
+    ujs.status, ujs.score, ujs.score_reason, ujs.score_breakdown::text, ujs.rejection_reason,
     ujs.embedding_score, ujs.rerank_score, ujs.listwise_rank, ujs.rank_reason,
     ujs.debate_flag, ujs.debate_note, ujs.would_apply, ujs.would_apply_reason,
     ujs.created_at, ujs.updated_at

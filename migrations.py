@@ -21,7 +21,7 @@ _SCHEMA = """
         source           TEXT DEFAULT 'linkedin',
         source_id        TEXT,
         search_query     TEXT,
-        structured_data  TEXT,
+        structured_data  JSONB,
         created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -40,7 +40,7 @@ _SCHEMA = """
         status              TEXT DEFAULT 'new',
         score               REAL,
         score_reason        TEXT,
-        score_breakdown     TEXT,
+        score_breakdown     JSONB,
         rejection_reason    TEXT,
         embedding_score     REAL,
         rerank_score        REAL,
@@ -215,7 +215,23 @@ _NEW_COLUMNS = [
     # than gating extraction eligibility, so Haiku still fills in everything
     # a source doesn't provide (remote/hybrid, company_type, working_language,
     # etc). NULL for postings/sources with no such native data.
-    ("job_postings", "source_structured_data", "TEXT"),
+    ("job_postings", "source_structured_data", "JSONB"),
+]
+
+# Columns that started as TEXT (holding json.dumps() output, parsed independently
+# by every reader) and are converted to JSONB here for write-time validation —
+# a malformed write now fails loudly instead of silently landing as unparseable
+# text that every future json.loads() call chokes on. Only a type change, so a
+# fresh install already gets JSONB straight from _SCHEMA/_NEW_COLUMNS above;
+# this only has work to do against a database created before this existed.
+# Guarded by an information_schema check (not just re-run every time) because
+# ALTER COLUMN TYPE JSONB USING NULLIF(col, '')::jsonb is not idempotent once
+# the column is already jsonb — NULLIF would then compare a jsonb value
+# against the text literal '', which Postgres can't parse as JSON and errors on.
+_JSONB_COLUMNS = [
+    ("job_postings", "structured_data"),
+    ("job_postings", "source_structured_data"),
+    ("user_job_states", "score_breakdown"),
 ]
 
 # Columns removed from _SCHEMA above (so a fresh install never creates them)
@@ -285,6 +301,16 @@ def init_db(conn) -> None:
         for table, column in _DROPPED_COLUMNS:
             cur.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS {column}")
             conn.commit()
+
+        for table, column in _JSONB_COLUMNS:
+            cur.execute(
+                "SELECT data_type FROM information_schema.columns WHERE table_name = %s AND column_name = %s",
+                (table, column),
+            )
+            row = cur.fetchone()
+            if row and row[0] != "jsonb":
+                cur.execute(f"ALTER TABLE {table} ALTER COLUMN {column} TYPE JSONB USING NULLIF({column}, '')::jsonb")
+                conn.commit()
 
         for table, name, check_sql in _CHECK_CONSTRAINTS:
             cur.execute(f"""

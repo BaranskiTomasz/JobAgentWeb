@@ -90,6 +90,41 @@ def test_check_constraints_reject_invalid_values():
         db_module._get_pool().putconn(conn)
 
 
+def test_json_columns_are_jsonb_and_reject_malformed_json():
+    # Regression: structured_data/source_structured_data/score_breakdown used to
+    # be TEXT holding json.dumps() output, parsed independently (and separately
+    # try/excepted) by every reader — a malformed write from any one writer
+    # would silently sit there until some future json.loads() call broke on it.
+    # JSONB validates at write time instead.
+    import uuid
+
+    import psycopg2
+
+    conn = db_module._get_pool().getconn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT table_name, column_name FROM information_schema.columns "
+            "WHERE (table_name, column_name) IN "
+            "(('job_postings', 'structured_data'), ('job_postings', 'source_structured_data'), "
+            " ('user_job_states', 'score_breakdown')) AND data_type = 'jsonb'"
+        )
+        assert len(cur.fetchall()) == 3
+
+        try:
+            cur.execute(
+                "INSERT INTO job_postings (id, title, url, structured_data) VALUES (%s, 'x', %s, %s)",
+                (str(uuid.uuid4()), f"https://example.com/{uuid.uuid4()}", "not valid json{"),
+            )
+            assert False, "malformed JSON was accepted into a jsonb column"
+        except psycopg2.errors.InvalidTextRepresentation:
+            pass
+        finally:
+            conn.rollback()
+    finally:
+        db_module._get_pool().putconn(conn)
+
+
 def test_dropped_columns_are_actually_gone():
     # Regression: salary_max/excluded_company_types/preferred_industries/
     # excluded_industries were collected/stored but never read by anything
