@@ -38,7 +38,7 @@
 <div class="wrap">
   <section class="welcome-hero">
     <h1>Your preferences</h1>
-    <p class="lede">Read-only here — this is set from JobAgent's local questionnaire and synced into this account. To change anything, update it in JobAgent and it'll reflect here on the next sync.</p>
+    <p class="lede">Read-only here, this is set from JobAgent's local questionnaire and synced into this account. To change anything, update it in JobAgent and it'll reflect here on the next sync.</p>
   </section>
 
   {% if not prefs %}
@@ -92,7 +92,7 @@
         {% if prefs.languages %}
           <p class="pref-plain">{{ prefs.languages | map(attribute='language') | join(', ') }}</p>
         {% else %}
-          <p class="lc-empty">Not set — postings in any language pass through.</p>
+          <p class="lc-empty">Not set, postings in any language pass through.</p>
         {% endif %}
       </div>
     </div>

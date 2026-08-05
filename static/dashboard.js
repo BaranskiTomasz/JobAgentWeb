@@ -81,7 +81,7 @@ function _workType(s) {
 }
 
 // Remote job locations are free text like "Warszawa, Poland (Remote)" or bare
-// "Poland (Remote)" — grouping by the raw string would split the same country
+// "Poland (Remote)", grouping by the raw string would split the same country
 // across every city that ever posted a remote role there. Derive an actual
 // country label so "Warszawa, Poland (Remote)" and "Kraków, Poland (Remote)"
 // both collapse to "Poland" and match a "Poland" filter.
@@ -89,7 +89,7 @@ const _US_STATE_CODES = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','G
 const _CA_PROVINCE_CODES = new Set(['AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT']);
 
 // Only labels that are actually a country (or a well-known multi-country recruiting
-// region) are allowed through — otherwise metro/region names with no comma-separated
+// region) are allowed through, otherwise metro/region names with no comma-separated
 // country ("Cracow Metropolitan Area", "Greater Sankt Polten") would be mistaken for one.
 const _KNOWN_COUNTRIES = new Set([
   'Afghanistan','Albania','Algeria','Andorra','Angola','Argentina','Armenia','Australia','Austria','Azerbaijan',
@@ -135,7 +135,7 @@ function _countryOf(location) {
 }
 
 // Whether a job is remote for Cities-vs-Countries grouping purposes is decided from the
-// location text itself ("... (Remote)" / ".../Remote"), not from structured_data.remote —
+// location text itself ("... (Remote)" / ".../Remote"), not from structured_data.remote,
 // many jobs have no structured_data yet (extraction hasn't run or failed on them), and
 // those would otherwise silently fall back into "Cities" even though the location text
 // plainly says Remote.
@@ -151,7 +151,7 @@ const _SUBSCORE_LABELS = { stack_fit: 'Stack', seniority_fit: 'Seniority', compa
 
 function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
 
-// If the session expired mid-use, every API call starts 401ing — send the
+// If the session expired mid-use, every API call starts 401ing, send the
 // user back to /login instead of leaving the dashboard silently broken.
 function _redirectIfUnauthenticated(resp) {
   if (resp.status === 401) { location.href = '/login'; return true; }
@@ -194,7 +194,7 @@ async function loadStats() {
 }
 
 // Looks up one bucket's apply-rate by its range label. apply_rate_by_bucket is
-// absent until JobAgentWeb is redeployed with it (see routers/evaluation.py) —
+// absent until JobAgentWeb is redeployed with it (see routers/evaluation.py),
 // this null-guards the same way the old precision_at_5/10 lookups always did.
 function _bucketRate(data, range) {
   const b = (data.apply_rate_by_bucket || []).find(x => x.range === range);
@@ -256,7 +256,7 @@ function _signalMetaText(s) {
 
 function _renderSignalChips(signals) {
   const notable = (signals || []).filter(s => s.type === 'ACCEPT' || s.type === 'REJECT' || s.type === 'INFER').slice(0, 6);
-  if (!notable.length) return '<span class="lc-empty">No strong signals yet — apply/reject a few more jobs, then distill locally.</span>';
+  if (!notable.length) return '<span class="lc-empty">No strong signals yet, apply/reject a few more jobs, then distill locally.</span>';
   return notable.map(s => {
     const cls = _SIGNAL_TAG_CLASS[s.type] || 'inf';
     return `<div class="sig"><span class="tag ${cls}">${_SIGNAL_TAG_LABEL[s.type] || s.type}</span><span class="txt">${esc(_signalMainText(s))}</span></div>`;
@@ -285,7 +285,7 @@ async function _loadLearnedCard() {
     const r = await fetch('/api/preference-profile');
     if (_redirectIfUnauthenticated(r)) return;
     const d = await r.json();
-    if (!d.profile) { el.innerHTML = '<span class="lc-empty">No profile yet — run distillation locally in JobAgent.</span>'; return; }
+    if (!d.profile) { el.innerHTML = '<span class="lc-empty">No profile yet, run distillation locally in JobAgent.</span>'; return; }
     if (!d.profile.signals || !d.profile.signals.length) { el.innerHTML = '<span class="lc-empty">' + esc((d.profile.content || '').slice(0, 200)) + '…</span>'; return; }
     el.innerHTML = _renderSignalChips(d.profile.signals);
   } catch {
@@ -394,7 +394,7 @@ document.querySelectorAll('.funnel .step[data-status]').forEach(step => {
 // ── Sources / jobs loading ─────────────────────────────────────────────────────
 
 async function _loadSources() {
-  // Never let this block the initial jobs load — a failure here shouldn't leave
+  // Never let this block the initial jobs load, a failure here shouldn't leave
   // the dashboard looking empty just because the source dropdown didn't populate.
   try {
     const r = await fetch('/api/sources');
@@ -408,7 +408,7 @@ async function _loadSources() {
     while (sel.options.length > 1) sel.remove(1);
     _availableSources.forEach(s => sel.add(new Option(s.name, s.id)));
   } catch {
-    // ignored — source dropdown just stays at "All sources"
+    // ignored, source dropdown just stays at "All sources"
   }
 }
 
@@ -424,7 +424,7 @@ async function loadJobs() {
     if (_redirectIfUnauthenticated(r)) return;
     ALL_JOBS = await r.json();
   } catch {
-    showToast('Failed to load jobs — is the server running?');
+    showToast('Failed to load jobs, is the server running?');
     return;
   }
   render();
@@ -489,7 +489,7 @@ function _renderBreakdownSection(jobId, b) {
   if (!b || (!(b.pros || []).length && !(b.cons || []).length && !Object.keys(b.sub_scores || {}).length)) return '';
   _breakdownCache[jobId] = b;
   // Fresh DOM for this job means any earlier "already loaded" dismissed-state fetch
-  // no longer applies to what's on screen now — force a re-fetch next time it's opened.
+  // no longer applies to what's on screen now, force a re-fetch next time it's opened.
   _dismissedLoaded.delete(jobId);
   const subs = Object.entries(b.sub_scores || {}).map(([key, val]) => `
     <div class="ss">
@@ -540,7 +540,7 @@ function _renderCard(j) {
   // bracket text.
   const isExploration = (j.rank_reason || '').startsWith('[EXPLORATION] ');
   const explorationBadge = isExploration
-    ? `<div class="exploration-badge" title="Randomly sampled from outside the top-ranked pool for a full AI review — checks whether the ranking is missing good jobs lower down.">
+    ? `<div class="exploration-badge" title="Randomly sampled from outside the top-ranked pool for a full AI review, checks whether the ranking is missing good jobs lower down.">
          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M14.5 9.5l-2 5-5 2 2-5 5-2z"/></svg>
          Exploration pick
        </div>`
@@ -651,7 +651,7 @@ function render() {
   container.classList.toggle('selecting', _selectMode);
   container.innerHTML = '';
 
-  // Always clear any pager/load-more left over from whatever tab was showing before —
+  // Always clear any pager/load-more left over from whatever tab was showing before,
   // it lives as a sibling of #jobs-container, so clearing container.innerHTML above
   // doesn't remove it, and the empty-results branch below used to return before ever
   // reaching _renderPager()'s own cleanup, leaving a stale "Load more" bar on screen.
@@ -736,7 +736,7 @@ function _loadMore() {
 }
 
 function _goToPage(n) {
-  // Numbered page buttons jump straight to that page's own slice — unlike _loadMore(),
+  // Numbered page buttons jump straight to that page's own slice, unlike _loadMore(),
   // which appends cumulatively, clicking "8" should show only page 8, not pages 1-8 at once.
   const container = document.getElementById('jobs-container');
   const start = (n - 1) * BATCH_SIZE;
@@ -797,9 +797,9 @@ async function confirmDismiss(jobId, type, idx) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ item_type: type, item_text: itemText, reason }),
   });
-  if (!r.ok) { showToast('Failed to save — please try again'); return; }
+  if (!r.ok) { showToast('Failed to save, please try again'); return; }
   _markItemDismissed(jobId, type, idx, reason);
-  showToast('Noted — this will shape future scoring, not this job.');
+  showToast('Noted, this will shape future scoring, not this job.');
 }
 
 function _markItemDismissed(jobId, type, idx, reason) {
@@ -852,7 +852,7 @@ async function setStatus(jobId, status, rejectionReason = null) {
     body: JSON.stringify(body),
   });
   if (!r.ok) {
-    showToast('Error saving status — please try again');
+    showToast('Error saving status, please try again');
     return;
   }
 
@@ -923,7 +923,7 @@ function _buildScoreFilterPanel() {
   }).join('');
   panel.innerHTML =
     `<div class="scoref-title">Filter by exact score</div>
-     <p class="scoref-hint">Pick one or more values — jobs matching any of them are shown.</p>
+     <p class="scoref-hint">Pick one or more values, jobs matching any of them are shown.</p>
      <div class="scoref-grid">${pills}</div>
      <button type="button" class="scoref-clear" onclick="_clearScoreFilters()">Clear score filter</button>`;
 }

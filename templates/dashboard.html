@@ -54,7 +54,7 @@
       <div class="panel-label">
         <span class="lbl-with-info">Avg score
           <span class="info"><button type="button" class="info-btn">?</button>
-            <span class="tip">Average score across <b>new, unreviewed</b> jobs only. Reviewed/applied/rejected jobs are excluded so old decisions don't drag this number around — it reflects what's waiting on you right now.</span>
+            <span class="tip">Average score across <b>new, unreviewed</b> jobs only. Reviewed/applied/rejected jobs are excluded so old decisions don't drag this number around, it reflects what's waiting on you right now.</span>
           </span>
         </span>
       </div>
@@ -66,7 +66,7 @@
       <div class="panel-label">
         <span class="lbl-with-info">Calibration
           <span class="info"><button type="button" class="info-btn">?</button>
-            <span class="tip">How well the AI ranking matches your actual decisions. <b>Apply-rate by rank bucket</b>: of the jobs you've decided on at each rank range, what fraction you applied to — should fall as rank worsens. Click for the full report.</span>
+            <span class="tip">How well the AI ranking matches your actual decisions. <b>Apply-rate by rank bucket</b>: of the jobs you've decided on at each rank range, what fraction you applied to, should fall as rank worsens. Click for the full report.</span>
           </span>
         </span>
         <span class="open-cue">Details →</span>
@@ -95,12 +95,12 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/><path d="M9 21h6M10 17h4"/></svg>
         What the agent learned
         <span class="info"><button type="button" class="info-btn">?</button>
-          <span class="tip">Distilled locally by JobAgent from the jobs you've applied to and rejected. Read-only here — the next local distillation run refreshes it.</span>
+          <span class="tip">Distilled locally by JobAgent from the jobs you've applied to and rejected. Read-only here, the next local distillation run refreshes it.</span>
         </span>
       </div>
       <div class="lc-sub"><a href="#" onclick="openLearnedModal(); return false;">View full profile →</a></div>
     </div>
-    <div class="lc-signals" id="lc-signals"><span class="lc-empty">No profile yet — run distillation locally in JobAgent.</span></div>
+    <div class="lc-signals" id="lc-signals"><span class="lc-empty">No profile yet, run distillation locally in JobAgent.</span></div>
   </div>
 
   <div class="tabs" id="tabs">
@@ -185,7 +185,7 @@
   </div>
 </div>
 
-<!-- Learned (full profile) modal — read-only, no refresh: distillation runs in JobAgent locally -->
+<!-- Learned (full profile) modal, read-only, no refresh: distillation runs in JobAgent locally -->
 <div class="overlay" id="learned-modal">
   <div class="modal">
     <div class="modal-hd"><h2>Preference profile</h2><button class="modal-close" onclick="closeLearnedModal()">✕</button></div>
