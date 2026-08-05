@@ -226,17 +226,18 @@ _DROPPED_COLUMNS = [
 
 # Mirrors the value sets already enforced app-side (Pydantic Literal in
 # models.py, criteria_repo.py's VALID_TYPES) as a DB-level backstop for raw SQL
-# writes that skip those models entirely. Postgres has no "ADD CONSTRAINT IF
-# NOT EXISTS" for CHECK, so each is wrapped in a DO block below that swallows
-# the duplicate_object error on re-run.
+# writes that skip those models entirely.
 _CHECK_CONSTRAINTS = [
     (
         "user_job_states", "user_job_states_status_check",
         "CHECK (status IN ('new', 'reviewed', 'applied', 'rejected', 'auto_rejected'))",
     ),
     (
+        # 'failed' is legacy: no current code path writes it, but real rows on
+        # the live database predate the current 'error'/'done_with_errors'
+        # vocabulary and still carry it.
         "sessions", "sessions_status_check",
-        "CHECK (status IN ('running', 'done', 'cancelled', 'error', 'done_with_errors'))",
+        "CHECK (status IN ('running', 'done', 'cancelled', 'error', 'done_with_errors', 'failed'))",
     ),
     (
         "criteria", "criteria_type_check",
@@ -283,13 +284,19 @@ def init_db(conn) -> None:
                 conn.commit()
 
         for table, name, check_sql in _CHECK_CONSTRAINTS:
-            cur.execute(f"""
-                DO $$ BEGIN
-                    ALTER TABLE {table} ADD CONSTRAINT {name} {check_sql};
-                EXCEPTION WHEN duplicate_object THEN NULL;
-                END $$;
-            """)
+            # DROP + ADD instead of an ADD-and-swallow-duplicate_object DO block:
+            # that pattern is a no-op once the constraint already exists under
+            # this name, even if check_sql has since changed, so a widened
+            # value set would silently never reach the database. This always
+            # ends up matching the current definition here exactly.
+            cur.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {name}")
+            cur.execute(f"ALTER TABLE {table} ADD CONSTRAINT {name} {check_sql}")
             conn.commit()
     finally:
+        # A failed step above leaves the transaction aborted; roll back before
+        # the unlock so that failure doesn't also mask itself by making the
+        # unlock/commit here raise InFailedSqlTransaction instead, and so the
+        # lock always gets released for the next worker's attempt to retry.
+        conn.rollback()
         cur.execute("SELECT pg_advisory_unlock(%s)", (_MIGRATION_LOCK_ID,))
         conn.commit()

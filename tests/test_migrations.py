@@ -1,6 +1,7 @@
 import threading
 
 import db as db_module
+import migrations
 from migrations import init_db
 
 
@@ -86,6 +87,80 @@ def test_check_constraints_reject_invalid_values():
                 pass
             finally:
                 conn.rollback()
+    finally:
+        db_module._get_pool().putconn(conn)
+
+
+def test_sessions_status_check_still_allows_legacy_failed_value():
+    # Regression: the first version of this constraint didn't include 'failed',
+    # a status no current code writes but that real rows on the production
+    # database predate the current vocabulary and still carry. Deploying that
+    # version against real data raised CheckViolation on startup and took the
+    # whole service down, this confirms the value the incident surfaced is
+    # actually covered now.
+    import uuid
+
+    conn = db_module._get_pool().getconn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO users (username, password_hash) VALUES (%s, 'x') RETURNING id",
+            (f"legacy-status-test-{uuid.uuid4()}",),
+        )
+        user_id = cur.fetchone()[0]
+        cur.execute("INSERT INTO sessions (user_id, status) VALUES (%s, 'failed')", (user_id,))
+        conn.commit()
+    finally:
+        conn.rollback()
+        db_module._get_pool().putconn(conn)
+
+
+def test_init_db_releases_the_lock_even_when_a_step_fails(monkeypatch):
+    # Regression: the exact incident above also had a second bug, the finally
+    # block called pg_advisory_unlock/commit on a connection whose transaction
+    # was already aborted by the failed step, which raised its own
+    # InFailedSqlTransaction and skipped the unlock entirely. The advisory
+    # lock stayed held by that dead connection, so every subsequent startup
+    # (including the rolled-back previous version, which doesn't even touch
+    # constraints) hung forever waiting for a lock nothing would ever release.
+    import uuid
+
+    broken_name = "sessions_status_check_test_broken"
+    broken_constraints = [("sessions", broken_name, "CHECK (status IN ('nonexistent'))")]
+
+    conn = db_module._get_pool().getconn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO users (username, password_hash) VALUES (%s, 'x') RETURNING id",
+            (f"lock-release-test-{uuid.uuid4()}",),
+        )
+        user_id = cur.fetchone()[0]
+        # A real row the broken constraint's CHECK actually rejects, so ADD
+        # CONSTRAINT below fails the same way it did against production data,
+        # not a no-op against an empty, freshly-truncated test table.
+        cur.execute("INSERT INTO sessions (user_id, status) VALUES (%s, 'running')", (user_id,))
+        conn.commit()
+
+        monkeypatch.setattr(migrations, "_CHECK_CONSTRAINTS", broken_constraints)
+        try:
+            init_db(conn)
+            assert False, "expected init_db to raise on a constraint real data violates"
+        except Exception:
+            pass
+        monkeypatch.undo()
+
+        # Reusing the exact same connection (not a fresh one from the pool)
+        # is what actually exercises the fix: if init_db's finally left this
+        # connection's transaction aborted instead of rolling it back, this
+        # call's own opening `SELECT pg_advisory_lock(...)` would immediately
+        # raise InFailedSqlTransaction, the same failure mode observed in
+        # production, rather than genuinely retrying the migration.
+        init_db(conn)
+
+        cur = conn.cursor()
+        cur.execute(f"ALTER TABLE sessions DROP CONSTRAINT IF EXISTS {broken_name}")
+        conn.commit()
     finally:
         db_module._get_pool().putconn(conn)
 
