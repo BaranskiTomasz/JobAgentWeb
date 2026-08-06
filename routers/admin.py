@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 import users_repo
+from config import INVITE_CODE
 from db import get_db
 from deps import require_admin
 
@@ -15,7 +16,10 @@ templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates"
 @router.get("", response_class=HTMLResponse)
 def admin_page(request: Request, user: dict = Depends(require_admin), conn=Depends(get_db)):
     users = users_repo.list_all(conn)
-    return templates.TemplateResponse(request, "admin.html", {"users": users, "current_user_id": user["id"]})
+    return templates.TemplateResponse(
+        request, "admin.html",
+        {"users": users, "current_user_id": user["id"], "invite_code": INVITE_CODE},
+    )
 
 
 @router.post("/users/{user_id}/delete")

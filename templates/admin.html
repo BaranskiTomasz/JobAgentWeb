@@ -20,6 +20,18 @@
 
 <div class="wrap">
   <div class="panel" style="margin-top: 20px;">
+    <div class="panel-label">Invite code</div>
+    {% if invite_code %}
+    <div style="display:flex; align-items:center; gap:10px; margin-top:10px;">
+      <code class="mono" id="invite-code" style="font-size:1.1rem;">{{ invite_code }}</code>
+      <button type="button" class="btn-ghost" id="copy-invite-btn" onclick="copyInviteCode()">Copy</button>
+    </div>
+    {% else %}
+    <p class="lc-empty">Not set, registration is closed. Set INVITE_CODE in .env to open it.</p>
+    {% endif %}
+  </div>
+
+  <div class="panel" style="margin-top: 20px;">
     <div class="panel-label">Users ({{ users|length }})</div>
     <table class="div-tbl" style="width:100%; margin-top: 10px;">
       <thead><tr><th>Username</th><th>Admin</th><th>Created</th><th></th></tr></thead>
@@ -45,5 +57,16 @@
   </div>
 </div>
 
+<script>
+  function copyInviteCode() {
+    const code = document.getElementById('invite-code').textContent;
+    navigator.clipboard.writeText(code).then(() => {
+      const btn = document.getElementById('copy-invite-btn');
+      const original = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    });
+  }
+</script>
 </body>
 </html>

@@ -1,0 +1,125 @@
+/* Page-specific styles for /how-it-works — builds on onboarding.css tokens. */
+
+.explain-hero {
+  max-width: 720px; margin: 0 auto;
+  padding: clamp(40px, 8vw, 76px) 24px 8px;
+}
+.explain-hero h1 {
+  font-family: var(--font-display); font-weight: 500;
+  font-size: clamp(1.9rem, 4.5vw, 2.8rem); line-height: 1.12;
+  letter-spacing: -0.01em; text-wrap: balance; margin: 0 0 16px;
+}
+.explain-hero p.lede {
+  font-size: 1.05rem; color: var(--ink-soft); max-width: 58ch; margin: 0;
+}
+
+.explain-nav {
+  max-width: 720px; margin: 28px auto 0; padding: 0 24px;
+  display: flex; flex-wrap: wrap; gap: 8px 18px;
+}
+.explain-nav a {
+  font-size: 0.82rem; color: var(--ink-soft); text-decoration: none;
+  padding: 5px 0; border-bottom: 1px solid transparent;
+}
+.explain-nav a:hover { color: var(--signal); border-color: var(--signal); }
+
+.explain-section {
+  max-width: 720px; margin: 0 auto; padding: 56px 24px 0;
+  scroll-margin-top: 20px;
+}
+.explain-section:last-of-type { padding-bottom: 56px; }
+.explain-section .eyebrow {
+  font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--signal); margin: 0 0 8px;
+}
+.explain-section h2 {
+  font-family: var(--font-display); font-weight: 500; font-size: 1.5rem;
+  margin: 0 0 10px; text-wrap: balance;
+}
+.explain-section > p.section-lede {
+  font-size: 0.98rem; color: var(--ink-soft); max-width: 62ch; margin: 0 0 28px;
+}
+
+/* Two-up concept cards (CV parsing / Questionnaire) */
+.concept-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+}
+@media (max-width: 640px) { .concept-grid { grid-template-columns: 1fr; } }
+.concept-card {
+  background: var(--paper-raised); border: 1px solid var(--line); border-radius: 14px;
+  padding: 20px 22px; box-shadow: var(--shadow);
+}
+.concept-card__icon {
+  width: 38px; height: 38px; border-radius: 9px;
+  background: var(--signal-soft); color: var(--signal);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 14px;
+}
+.concept-card h3 { font-size: 1rem; margin: 0 0 6px; }
+.concept-card p { font-size: 0.88rem; color: var(--ink-soft); margin: 0; line-height: 1.55; }
+
+/* Source routing mini-diagram */
+.route-map {
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--paper-raised); border: 1px solid var(--line); border-radius: 14px;
+  padding: 18px 20px; box-shadow: var(--shadow); margin-top: 4px;
+}
+.route-row { display: flex; align-items: baseline; gap: 12px; font-size: 0.85rem; }
+.route-row .label { flex: 0 0 168px; color: var(--ink); font-weight: 600; }
+.route-row .rule { color: var(--ink-soft); }
+.route-row + .route-row { border-top: 1px solid var(--line); padding-top: 8px; }
+
+/* Vertical evaluation flow — the main diagram */
+.flow { position: relative; margin-top: 8px; }
+.flow::before {
+  content: ""; position: absolute; left: 21px; top: 8px; bottom: 8px; width: 2px;
+  background: var(--line);
+}
+.flow__step { position: relative; padding: 0 0 30px 60px; }
+.flow__step:last-child { padding-bottom: 0; }
+.flow__icon {
+  position: absolute; left: 0; top: 0; width: 44px; height: 44px; border-radius: 50%;
+  background: var(--paper-raised); border: 2px solid var(--signal); color: var(--signal);
+  display: flex; align-items: center; justify-content: center; z-index: 1;
+}
+.flow__icon.is-free { border-color: var(--ink-faint); color: var(--ink-faint); }
+.flow__step h3 {
+  font-size: 1rem; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.flow__tag {
+  font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em;
+  background: var(--signal-soft); color: var(--signal); border-radius: 999px; padding: 2px 9px;
+}
+.flow__tag.is-free { background: var(--paper); color: var(--ink-faint); border: 1px solid var(--line); }
+.flow__step p { font-size: 0.88rem; color: var(--ink-soft); margin: 0 0 8px; line-height: 1.6; max-width: 56ch; }
+.flow__detail {
+  font-size: 0.82rem; color: var(--ink-soft); background: var(--paper);
+  border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; max-width: 56ch;
+}
+.flow__detail b { color: var(--ink); }
+
+/* Learning loop */
+.loop-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 4px;
+}
+@media (max-width: 640px) { .loop-grid { grid-template-columns: 1fr; } }
+.loop-card {
+  background: var(--paper-raised); border: 1px solid var(--line); border-radius: 14px;
+  padding: 20px 22px; box-shadow: var(--shadow);
+}
+.loop-card .eyebrow { margin-bottom: 6px; }
+.loop-card h3 { font-size: 0.98rem; margin: 0 0 8px; }
+.loop-card p { font-size: 0.87rem; color: var(--ink-soft); margin: 0; line-height: 1.6; }
+
+.callout {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: var(--signal-soft); border: 1px solid color-mix(in srgb, var(--signal) 30%, transparent);
+  border-radius: 12px; padding: 14px 16px; margin-top: 22px; font-size: 0.86rem; color: var(--ink);
+}
+.callout svg { flex: none; color: var(--signal); margin-top: 2px; }
+
+.explain-cta {
+  max-width: 720px; margin: 8px auto 0; padding: 32px 24px 0;
+  border-top: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+}
+.explain-cta p { margin: 0; font-size: 0.92rem; color: var(--ink-soft); }

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>How it works — JobAgentWeb</title>
 <link rel="stylesheet" href="/static/dashboard.css">
+<link rel="stylesheet" href="/static/explain.css">
 </head>
 <body>
 
@@ -41,46 +42,129 @@
   </div>
 </header>
 
-<div class="wrap">
-  <section class="welcome-hero">
-    <h1>From a CV to a ranked shortlist</h1>
-    <p class="lede">
-      JobAgentWeb is only the dashboard, everything below happens in <b>JobAgent</b>,
-      running locally on the candidate's own machine, once a day or on demand.
-    </p>
-  </section>
+<section class="explain-hero">
+  <h1>From a PDF to a ranked shortlist</h1>
+  <p class="lede">
+    JobAgentWeb is only the dashboard — everything below runs in <b>JobAgent</b>, a small
+    pipeline that reads your CV, learns what you're looking for, and reads hundreds of
+    postings a day so you only have to look at the ones worth your time, running locally
+    on your own machine. Here's exactly what happens at each step.
+  </p>
+</section>
 
-  <div class="hiw-grid">
-    <div class="panel hiw-card">
-      <div class="panel-label">01 · Getting started (once)</div>
-      <p>A PDF CV becomes a structured profile (stack, seniority, experience). A short questionnaire fills in what a CV can't: salary floor, work mode, dealbreakers. Both live locally and sync into this account's preferences (visible read-only on the <a href="/preferences">Preferences</a> page).</p>
+<nav class="explain-nav">
+  <a href="#start">01 · Getting started</a>
+  <a href="#search">02 · Searching, every day</a>
+  <a href="#evaluate">03 · How a posting gets evaluated</a>
+  <a href="#learn">04 · Getting smarter over time</a>
+</nav>
+
+<!-- 01 — Getting started -->
+<section class="explain-section" id="start">
+  <div class="eyebrow">01</div>
+  <h2>Getting started</h2>
+  <p class="section-lede">Two things happen once, before any searching begins: your CV becomes a profile, and you tell the agent what actually matters to you. Both happen in JobAgent, and show up read-only on this dashboard's <a href="/preferences">Preferences</a> page.</p>
+
+  <div class="concept-grid">
+    <div class="concept-card">
+      <span class="concept-card__icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z"/><path d="M9 13h6M9 17h6"/></svg>
+      </span>
+      <h3>Your CV becomes a profile</h3>
+      <p>You upload a PDF. AI reads it and pulls out the things that matter for matching: your tech stack, years of experience, seniority level, and a short summary — the same way a recruiter would skim it, just faster and every time consistently.</p>
     </div>
-    <div class="panel hiw-card">
-      <div class="panel-label">02 · Searching, every day</div>
-      <p>JobAgent derives its own search terms from the CV and preferences and checks a dozen-plus job boards, LinkedIn for every selected country, worldwide remote boards once as "remote," and Polish boards only if Poland is selected.</p>
+    <div class="concept-card">
+      <span class="concept-card__icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      </span>
+      <h3>You answer a few questions</h3>
+      <p>Your CV can't tell the agent your salary floor, whether you'll do hybrid, or which technologies you'd rather avoid — so a short questionnaire fills in the rest. Every answer is editable later in JobAgent, and nothing here is guessed.</p>
     </div>
-    <div class="panel hiw-card">
-      <div class="panel-label">03 · Fast, free filtering</div>
-      <p>Before any AI reads a word: language match, banned/required keywords, and hard rules (pay floor, remote-only) get checked deterministically. Most postings never make it past this stage, for free.</p>
+  </div>
+</section>
+
+<!-- 02 — Searching -->
+<section class="explain-section" id="search">
+  <div class="eyebrow">02</div>
+  <h2>Searching, every day</h2>
+  <p class="section-lede">You never write a search query or pick a job board yourself — the agent derives search terms from your CV and preferences, and knows which sites to check based on where you're willing to work.</p>
+
+  <div class="route-map">
+    <div class="route-row"><span class="label">LinkedIn</span><span class="rule">searched for every country you're open to — the widest net.</span></div>
+    <div class="route-row"><span class="label">Remotive, RemoteOK,<br>Working Nomads, WWR</span><span class="rule">worldwide remote boards — searched once per country you're open to, not once as a blanket "remote" query, since that would match every posting regardless of your actual location preferences.</span></div>
+    <div class="route-row"><span class="label">Polish boards<br><span style="font-weight:400;color:var(--ink-faint)">(JustJoin, NoFluffJobs, theprotocol.it…)</span></span><span class="rule">only queried if Poland is one of your selected countries.</span></div>
+  </div>
+</section>
+
+<!-- 03 — Evaluation, the main event -->
+<section class="explain-section" id="evaluate">
+  <div class="eyebrow">03</div>
+  <h2>How a posting gets evaluated</h2>
+  <p class="section-lede">Every posting goes through the same pipeline, in order. The early steps are free and instant — they exist specifically so the expensive AI reading only happens on postings that have a real chance.</p>
+
+  <div class="flow">
+    <div class="flow__step">
+      <span class="flow__icon is-free" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      </span>
+      <h3>Fast, free filtering <span class="flow__tag is-free">no AI cost</span></h3>
+      <p>Before any AI reads a word, three quick checks run: is this posting written in a language you actually speak, does it mention anything on your "avoid" list or miss a must-have skill, and does it obviously break a hard rule — pay below your floor, or on-site when you said remote-only. Anything that fails is set aside immediately, for free.</p>
     </div>
-    <div class="panel hiw-card">
-      <div class="panel-label">04 · AI scoring</div>
-      <p>Everything that survives is scored 0–10 against the candidate profile, with a breakdown: stack/seniority/company/pay sub-scores plus concrete pros and cons.</p>
+
+    <div class="flow__step">
+      <span class="flow__icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg>
+      </span>
+      <h3>AI reads and scores what's left</h3>
+      <p>Everything that survives gets read in full by AI and scored 0–10 against your profile. You don't just get a number — you get a breakdown: what fits well, what's a concern, and separate mini-scores for stack, seniority, company type, and pay, so you can see exactly why a posting landed where it did.</p>
     </div>
-    <div class="panel hiw-card">
-      <div class="panel-label">05 · Listwise ranking + second opinion</div>
-      <p>The strongest candidates are ranked directly against each other (not scored in isolation), then a second, independent model reviews the shortlist specifically for dealbreakers the first pass might have missed.</p>
+
+    <div class="flow__step">
+      <span class="flow__icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg>
+      </span>
+      <h3>The best matches get ranked against each other</h3>
+      <p>Scoring each posting alone only gets you so far — "good" is relative. So the strongest candidates go through a second pass where AI compares them directly against one another and settles on a definitive best-to-worst order, the way you'd sort a shortlist by hand if you had time to read all of them side by side.</p>
     </div>
-    <div class="panel hiw-card">
-      <div class="panel-label">06 · Learning from decisions</div>
-      <p>Every apply/reject/reviewed choice made here feeds back into JobAgent: a learned preference profile (shown read-only under "What the agent learned") and calibration examples for cases where the ranking and the actual decision disagreed.</p>
+
+    <div class="flow__step">
+      <span class="flow__icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
+      </span>
+      <h3>A second, independent AI double-checks it</h3>
+      <p>A skill match can look great on paper and still hide a dealbreaker — the wrong seniority, the wrong company type — especially when the stack lines up almost perfectly. A separate review pass looks specifically for that pattern and can bump a posting down (or flag it as underrated) before you ever see the list.</p>
+      <div class="flow__detail"><b>Why two AI passes, not one:</b> a single model can be consistently fooled by the same kind of mismatch. A second, independent read — checking the first one's work rather than starting over — catches what one pass alone tends to miss, without the cost of scoring everything twice from scratch.</div>
     </div>
   </div>
 
-  <div class="calib-explain hiw-note">
-    Changing preferences, uploading a new CV, or triggering a run all happen in JobAgent locally,
-    this dashboard is for reviewing results and making apply/reject/reviewed decisions.
+  <div class="callout">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+    <span>Most postings never reach the expensive steps. The free filtering stage typically clears out well over half of what gets collected — so the AI reading time (and cost) goes toward postings that actually have a shot.</span>
   </div>
+</section>
+
+<!-- 04 — Learning loop -->
+<section class="explain-section" id="learn">
+  <div class="eyebrow">04</div>
+  <h2>Getting smarter over time</h2>
+  <p class="section-lede">You just apply, reject, or mark postings as reviewed, right here on this dashboard. Two things happen quietly in the background because of it.</p>
+
+  <div class="loop-grid">
+    <div class="loop-card">
+      <div class="eyebrow">Learns from what you do</div>
+      <h3>Not just what you said</h3>
+      <p>Your stated preferences (the questionnaire) are one signal. What you actually apply to and reject is another — and sometimes they disagree. AI periodically studies your real decisions — company type, pay patterns, contract form, culture cues in the postings you liked vs. rejected — and builds a second, learned profile that feeds into every future score and ranking, alongside your stated answers.</p>
+    </div>
+    <div class="loop-card">
+      <div class="eyebrow">Learns from its own mistakes</div>
+      <h3>Calibration</h3>
+      <p>When the ranking puts something near the top and you reject it — or ranks something low and you apply anyway — that's a real disagreement worth remembering. Those specific cases get fed back into future scoring as a direct "you got this wrong before, don't repeat it" note, so the same mistake doesn't just happen quietly forever.</p>
+    </div>
+  </div>
+</section>
+
+<div class="explain-cta">
+  <p>Changing preferences, uploading a new CV, or triggering a run all happen in JobAgent locally — this dashboard is for reviewing results and making apply/reject/reviewed decisions.</p>
 </div>
 
 {% include "_footer.html" %}

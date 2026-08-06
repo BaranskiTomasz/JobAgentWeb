@@ -14,6 +14,11 @@ def test_admin_page_200_for_admin(admin_client):
     assert "adminuser" in resp.text
 
 
+def test_admin_page_shows_invite_code(admin_client):
+    resp = admin_client.get("/admin")
+    assert "test-invite-code" in resp.text
+
+
 def test_admin_delete_requires_admin(logged_in_client, other_user):
     resp = logged_in_client.post(f"/admin/users/{other_user['id']}/delete")
     assert resp.status_code == 403

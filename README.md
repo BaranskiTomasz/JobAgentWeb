@@ -19,9 +19,11 @@ The schema splits cleanly in two, defined in `migrations.py`:
 
 Username/password, bcrypt-hashed (`security.py`), backed by Starlette's signed-cookie `SessionMiddleware` — no JWT, no OAuth, no separate session table. `deps.get_current_user` resolves the session cookie to a `users` row on every request; `deps.require_admin` additionally gates on `is_admin`. Registration requires a shared invite code (`config.INVITE_CODE`, checked in `routers/auth.py`) — unset it and `/register` refuses everyone, deny-by-default. See [Deployment](#deployment) for how the current reference deployment also restricts network-level access on top of that.
 
+A second auth path exists for the local JobAgent desktop client: if both `JOBAGENT_API_KEY` and `JOBAGENT_API_KEY_USER_ID` are set, a request carrying a matching `X-JobAgent-Api-Key` header authenticates as that one user_id directly, bypassing the session cookie entirely (see `deps.get_current_user`). This lets a long-running local pipeline authenticate without ever needing interactive re-login, but it's explicitly scoped to one account's own automation — it can never reach `/admin` routes, even if the configured user_id happens to be an admin.
+
 ### Startup
 
-`main.py`'s `lifespan` calls `migrations.init_db(conn)` on every app start. It's fully idempotent (`CREATE TABLE IF NOT EXISTS` + `ADD COLUMN IF NOT EXISTS`), so there's no separate migration command to remember — pulling new code and restarting the process is the whole migration step.
+`main.py`'s `lifespan` calls `migrations.init_db(conn)` on every app start. It's fully idempotent (`CREATE TABLE IF NOT EXISTS`, `ADD`/`DROP COLUMN IF EXISTS`, and CHECK constraints re-applied via `DROP CONSTRAINT IF EXISTS` + `ADD CONSTRAINT` so a widened value set always actually lands), so there's no separate migration command to remember — pulling new code and restarting the process is the whole migration step. One real caveat: a CHECK constraint whose SQL is stricter than existing data (e.g. a status value real rows still carry but no current code writes) fails loudly on startup rather than deploying quietly — check what values a column actually holds in production before tightening a constraint on it, not just what current code is expected to write.
 
 ---
 

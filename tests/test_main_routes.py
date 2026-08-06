@@ -37,7 +37,7 @@ class TestHowItWorksRoute:
         # works without registering first.
         resp = client.get("/how-it-works", follow_redirects=False)
         assert resp.status_code == 200
-        assert "From a CV to a ranked shortlist" in resp.text
+        assert "From a PDF to a ranked shortlist" in resp.text
 
     def test_logged_out_nav_has_no_dashboard_or_logout_links(self, client):
         # /preferences is intentionally not checked here, how_it_works.html's

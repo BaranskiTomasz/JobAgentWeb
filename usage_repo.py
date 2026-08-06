@@ -86,11 +86,17 @@ def get_history(conn, user_id: int) -> list[dict]:
 
 
 def get_cost_per_100(conn, user_id: int) -> float | None:
-    # Rolling average across every recorded run, not tied to current job count.
+    # Computed directly from usage_log, not cost_summaries: cost_summaries only
+    # gets a row when record_run_summary() runs to completion client-side, but
+    # a pipeline run can take hours (LinkedIn stealth pacing), and if the local
+    # dashboard process is interrupted before then (machine sleeps, terminal
+    # closed, crash) the finally block that calls it never executes, real,
+    # already-billed usage_log rows just accumulate with no matching summary.
     cur = dict_cursor(conn)
     cur.execute(
-        "SELECT COALESCE(SUM(total_cost_usd),0) AS cost, COALESCE(SUM(jobs_evaluated),0) AS n "
-        "FROM cost_summaries WHERE user_id = %s AND jobs_evaluated > 0",
+        "SELECT COALESCE(SUM(cost_usd), 0) AS cost, "
+        "COALESCE(SUM(CASE WHEN module = 'scorer' THEN 1 ELSE 0 END), 0) AS n "
+        "FROM usage_log WHERE user_id = %s",
         (user_id,),
     )
     row = cur.fetchone()
