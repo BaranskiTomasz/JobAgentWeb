@@ -343,12 +343,14 @@ async function openEvalModal() {
   const waPrecisionPct = wa.precision != null ? Math.round(wa.precision * 100) : null;
   const waMeetsGate = waPrecisionPct != null && waPrecisionPct >= 90;
 
+  const rankTip = 'Position in that day\'s listwise ranking, 1 = the job Opus judged the best fit, comparing it directly against every other job in the pool (up to 20). Frozen at decision time, a job\'s rank here never gets silently relabeled later just because the pool has since changed.';
+  const rankInfo = `<span class="info"><button type="button" class="info-btn">?</button><span class="tip">${rankTip}</span></span>`;
   document.getElementById('eval-body').innerHTML = `
     <div class="eval-metrics">
-      <div class="eval-metric"><div class="ev">${_bucketRate(data, '1-5')}</div><div class="el">RANK 1-5</div></div>
-      <div class="eval-metric"><div class="ev">${_bucketRate(data, '6-10')}</div><div class="el">RANK 6-10</div></div>
-      <div class="eval-metric"><div class="ev">${_bucketRate(data, '11-15')}</div><div class="el">RANK 11-15</div></div>
-      <div class="eval-metric"><div class="ev">${_bucketRate(data, '16-20')}</div><div class="el">RANK 16-20</div></div>
+      <div class="eval-metric"><div class="ev">${_bucketRate(data, '1-5')}</div><div class="el">RANK 1-5 ${rankInfo}</div></div>
+      <div class="eval-metric"><div class="ev">${_bucketRate(data, '6-10')}</div><div class="el">RANK 6-10 ${rankInfo}</div></div>
+      <div class="eval-metric"><div class="ev">${_bucketRate(data, '11-15')}</div><div class="el">RANK 11-15 ${rankInfo}</div></div>
+      <div class="eval-metric"><div class="ev">${_bucketRate(data, '16-20')}</div><div class="el">RANK 16-20 ${rankInfo}</div></div>
     </div>
     <p class="eval-ranked-line">${data.total_ranked ?? 0} jobs ranked total &middot; ${cases.length} divergence cases</p>
     <p class="calib-explain"><b>Apply-rate by rank bucket</b> looks at every job you've actually <i>decided</i> on (applied, rejected, or auto-rejected) and groups it by the listwise rank it was given, then shows what fraction of each group you applied to. Unlike a fixed top-K snapshot, this uses your <i>entire</i> decision history at each rank range, so it sharpens as you decide on more jobs instead of staying pinned to the same handful. "Reviewed" doesn't count as a decision: it means you looked but haven't committed either way, so it's left out entirely.
@@ -365,7 +367,7 @@ async function openEvalModal() {
       <p class="calib-explain">Of the jobs flagged as <b>"would apply"</b> (score ≥ ${data.would_apply_score_floor ?? 7.0}, no dealbreaker risk), what fraction were actually applied to once decided.</p>
     </div>
 
-    <div class="eval-tbl-h">Divergence cases <span class="cnt">(${cases.length})</span></div>
+    <div class="eval-tbl-h">Divergence cases <span class="cnt">(${cases.length})</span> <span class="info"><button type="button" class="info-btn">?</button><span class="tip">The "Rank" column is this job's listwise_rank at the moment the divergence was recorded, frozen at decision time, not its current position if the pool has changed since.</span></span></div>
     <div class="div-scroll">
       <table class="div-tbl">
         <thead><tr><th>Type</th><th>Title</th><th>Company</th><th>Rank</th></tr></thead>
