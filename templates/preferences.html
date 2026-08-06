@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Preferences — JobAgentWeb</title>
 <link rel="stylesheet" href="/static/dashboard.css">
+<link rel="stylesheet" href="/static/questionnaire.css">
 </head>
 <body>
 
@@ -35,79 +36,172 @@
   </div>
 </header>
 
-<div class="wrap">
-  <section class="welcome-hero">
-    <h1>Your preferences</h1>
-    <p class="lede">Read-only here, this is set from JobAgent's local questionnaire and synced into this account. To change anything, update it in JobAgent and it'll reflect here on the next sync.</p>
-  </section>
+<div class="quiz">
+  <nav class="quiz__rail">
+    <div class="quiz__rail-label">Sections</div>
+    <a href="#s-location"><span class="n">01</span> Work mode</a>
+    <a href="#s-salary"><span class="n">02</span> Compensation</a>
+    <a href="#s-role"><span class="n">03</span> Seniority & role</a>
+    <a href="#s-company"><span class="n">04</span> Company</a>
+    <a href="#s-tech"><span class="n">05</span> Technologies</a>
+    <a href="#s-lang"><span class="n">06</span> Languages</a>
+    <a href="#s-notes"><span class="n">07</span> Anything else</a>
+  </nav>
 
-  {% if not prefs %}
-    <div class="panel">
-      <p class="lc-empty">No preferences saved yet. Fill out the questionnaire in JobAgent locally to get started.</p>
-    </div>
-  {% else %}
-    <div class="summary" style="grid-template-columns: repeat(2, 1fr);">
-      <div class="panel">
-        <div class="panel-label">Work mode & location</div>
-        <p class="pref-plain">
-          {% if prefs.work_mode %}{{ prefs.work_mode | map('capitalize') | join(', ') }}{% else %}<span class="lc-empty">Not set</span>{% endif %}
-        </p>
-        {% if prefs.remote_countries %}<p class="pref-plain"><b>Remote countries:</b> {{ prefs.remote_countries | join(', ') }}</p>{% endif %}
-        {% if prefs.hybrid_cities %}<p class="pref-plain"><b>Hybrid/on-site cities:</b> {{ prefs.hybrid_cities | join(', ') }}</p>{% endif %}
-      </div>
-
-      <div class="panel">
-        <div class="panel-label">Compensation</div>
-        {% if prefs.salary_min %}
-          <p class="pref-plain">{{ prefs.salary_min }}+ {{ prefs.salary_currency or '' }} / year</p>
-        {% else %}
-          <p class="lc-empty">Not set</p>
-        {% endif %}
-        <p class="pref-plain"><b>Show jobs without salary shown:</b> {{ 'Yes' if prefs.show_jobs_without_salary else 'No' }}</p>
-      </div>
-
-      <div class="panel">
-        <div class="panel-label">Seniority & role</div>
-        <p class="pref-plain">{% if prefs.seniority_levels %}{{ prefs.seniority_levels | join(', ') }}{% else %}<span class="lc-empty">Not set</span>{% endif %}</p>
-        {% if prefs.role_types %}<p class="pref-plain"><b>Role types:</b> {{ prefs.role_types | join(', ') }}</p>{% endif %}
-      </div>
-
-      <div class="panel">
-        <div class="panel-label">Company</div>
-        {% if prefs.preferred_company_types %}<p class="pref-plain"><b>Preferred:</b> {{ prefs.preferred_company_types | join(', ') }}</p>{% endif %}
-        {% if not prefs.preferred_company_types %}
-          <p class="lc-empty">Not set</p>
-        {% endif %}
-      </div>
-
-      <div class="panel">
-        <div class="panel-label">Technologies</div>
-        {% if prefs.extra_tech %}<p class="pref-plain"><b>Required:</b> {{ prefs.extra_tech | join(', ') }}</p>{% endif %}
-        {% if prefs.avoided_tech %}<p class="pref-plain"><b>Avoided:</b> {{ prefs.avoided_tech | join(', ') }}</p>{% endif %}
-        {% if not (prefs.extra_tech or prefs.avoided_tech) %}<p class="lc-empty">Not set</p>{% endif %}
-      </div>
-
-      <div class="panel">
-        <div class="panel-label">Languages</div>
-        {% if prefs.languages %}
-          <p class="pref-plain">{{ prefs.languages | map(attribute='language') | join(', ') }}</p>
-        {% else %}
-          <p class="lc-empty">Not set, postings in any language pass through.</p>
-        {% endif %}
-      </div>
+  <main class="quiz__main">
+    <div class="quiz__head">
+      <h1>Your preferences</h1>
+      <p>Everything below is optional — the more you answer, the sharper the ranking. Come back and change it anytime.</p>
     </div>
 
-    {% if prefs.open_notes %}
-      <div class="panel" style="margin-top:14px;">
-        <div class="panel-label">Anything else</div>
-        <p class="pref-plain">{{ prefs.open_notes }}</p>
+    <div class="cv-replace">
+      <span class="cv-replace__label">Current CV: <strong id="cv-filename">—</strong></span>
+      <span class="cv-replace__hint">Uploading or replacing a CV happens in JobAgent locally.</span>
+    </div>
+
+    <section class="card" id="s-location">
+      <div class="card__head"><h2>01 · Work mode & location</h2><span class="optional-tag">optional</span></div>
+      <p class="card__hint">You can select more than one.</p>
+      <div class="field-row chip-group" id="workmode-group">
+        <span class="chip" data-value="remote" onclick="toggleWorkMode(this)">Remote</span>
+        <span class="chip" data-value="hybrid" onclick="toggleWorkMode(this)">Hybrid</span>
+        <span class="chip" data-value="onsite" onclick="toggleWorkMode(this)">On-site</span>
       </div>
-    {% endif %}
-  {% endif %}
+
+      <div id="remote-panel" style="display:none;">
+        <label class="field-label">Countries you want to see remote postings from</label>
+        <div class="field-row" id="country-chips"></div>
+        <div class="group-add-row">
+          <button class="btn-group-add info" type="button" data-group="EU" onclick="addCountryGroup('EU')">
+            + Add all EU countries
+            <span class="tip" id="tip-EU"></span>
+          </button>
+          <button class="btn-group-add info" type="button" data-group="EUROZONE" onclick="addCountryGroup('EUROZONE')">
+            + Add Eurozone countries
+            <span class="tip" id="tip-EUROZONE"></span>
+          </button>
+          <button class="btn-group-add info" type="button" data-group="NATO" onclick="addCountryGroup('NATO')">
+            + Add NATO countries
+            <span class="tip" id="tip-NATO"></span>
+          </button>
+        </div>
+        <div class="add-row">
+          <input type="text" id="country-input" list="country-suggestions" placeholder="Add a country, e.g. Canada" onkeydown="if(event.key==='Enter'){addChip('country-chips','country-input'); event.preventDefault();}">
+          <datalist id="country-suggestions"></datalist>
+          <button class="btn-add" type="button" onclick="addChip('country-chips','country-input')">Add</button>
+        </div>
+        <p class="card__hint" style="margin:8px 0 0;">Not on the list, or want to start from scratch? Remove any suggestion and add your own — this list is entirely yours.</p>
+      </div>
+
+      <div id="hybrid-panel" style="display:none; margin-top:16px;">
+        <label class="field-label">Cities you could realistically commute to or relocate for</label>
+        <div class="field-row" id="city-chips"></div>
+        <div class="add-row">
+          <input type="text" id="city-input" list="city-suggestions" placeholder="Add a city, e.g. Warsaw" onkeydown="if(event.key==='Enter'){addChip('city-chips','city-input'); event.preventDefault();}">
+          <datalist id="city-suggestions"></datalist>
+          <button class="btn-add" type="button" onclick="addChip('city-chips','city-input')">Add</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="s-salary">
+      <div class="card__head"><h2>02 · Compensation</h2><span class="optional-tag">optional</span></div>
+      <p class="card__hint">Annual minimum, gross — the system converts currency and pay basis when scoring postings.</p>
+      <div class="salary-row">
+        <div class="field">
+          <label class="field-label">Minimum</label>
+          <input type="number" class="num-mono" id="salary-min" placeholder="180000">
+        </div>
+        <div class="field currency">
+          <label class="field-label">Currency</label>
+          <select id="salary-currency">
+            <option>PLN</option><option>EUR</option><option>USD</option><option>GBP</option>
+          </select>
+        </div>
+      </div>
+      <div class="check-row">
+        <input type="checkbox" id="show-no-salary" checked>
+        <label for="show-no-salary">Also show postings with no salary listed</label>
+      </div>
+    </section>
+
+    <section class="card" id="s-role">
+      <div class="card__head"><h2>03 · Seniority & role</h2><span class="optional-tag">optional</span></div>
+      <label class="field-label">Seniority</label>
+      <div class="field-row chip-group" id="seniority-group">
+        <span class="chip" data-value="junior" onclick="toggle(this)">Junior</span>
+        <span class="chip" data-value="mid" onclick="toggle(this)">Mid</span>
+        <span class="chip" data-value="senior" onclick="toggle(this)">Senior</span>
+        <span class="chip" data-value="lead" onclick="toggle(this)">Lead</span>
+        <span class="chip" data-value="director" onclick="toggle(this)">Director</span>
+      </div>
+      <label class="field-label">Role</label>
+      <div class="field-row chip-group" id="role-group">
+        <span class="chip" data-value="developer" onclick="toggle(this)">Developer / Engineer</span>
+        <span class="chip" data-value="qa" onclick="toggle(this)">QA / Tester</span>
+        <span class="chip" data-value="devops" onclick="toggle(this)">DevOps / SRE</span>
+        <span class="chip" data-value="data" onclick="toggle(this)">Data</span>
+        <span class="chip" data-value="architect" onclick="toggle(this)">Architect</span>
+        <span class="chip" data-value="team_lead" onclick="toggle(this)">Team Lead / Manager</span>
+        <span class="chip" data-value="security" onclick="toggle(this)">Security</span>
+      </div>
+    </section>
+
+    <section class="card" id="s-company">
+      <div class="card__head"><h2>04 · Company</h2><span class="optional-tag">optional</span></div>
+      <label class="field-label">Show me</label>
+      <div class="field-row chip-group" id="company-group">
+        <span class="chip" data-value="product" onclick="toggle(this)">Product company</span>
+        <span class="chip" data-value="startup" onclick="toggle(this)">Startup</span>
+        <span class="chip" data-value="scaleup" onclick="toggle(this)">Scale-up</span>
+        <span class="chip" data-value="enterprise" onclick="toggle(this)">Enterprise</span>
+        <span class="chip" data-value="consulting" onclick="toggle(this)">Consulting</span>
+      </div>
+      <p class="card__hint" style="margin-top:10px;">Selecting anything here filters out every other type. Leave empty for no restriction.</p>
+    </section>
+
+    <section class="card" id="s-tech">
+      <div class="card__head"><h2>05 · Technologies</h2><span class="optional-tag">optional</span></div>
+      <label class="field-label">Add or remove anything</label>
+      <div class="field-row" id="tech-chips"></div>
+      <div class="add-row">
+        <input type="text" id="tech-input" placeholder="Add a technology, e.g. Kubernetes" onkeydown="if(event.key==='Enter'){addChip('tech-chips','tech-input'); event.preventDefault();}">
+        <button class="btn-add" type="button" onclick="addChip('tech-chips','tech-input')">Add</button>
+      </div>
+
+      <label class="field-label" style="margin-top:18px;">Technologies to avoid</label>
+      <div class="field-row chip-group exclude" id="avoid-chips"></div>
+      <div class="add-row">
+        <input type="text" id="avoid-input" placeholder="Add something to avoid, e.g. jQuery" onkeydown="if(event.key==='Enter'){addChip('avoid-chips','avoid-input'); event.preventDefault();}">
+        <button class="btn-add" type="button" onclick="addChip('avoid-chips','avoid-input')">Add</button>
+      </div>
+    </section>
+
+    <section class="card" id="s-lang">
+      <div class="card__head"><h2>06 · Languages</h2><span class="optional-tag">optional</span></div>
+      <p class="card__hint">Not listed? Just type it — this isn't limited to the suggestions.</p>
+      <datalist id="language-suggestions"></datalist>
+      <div id="lang-rows"></div>
+      <button class="btn-add" type="button" onclick="addLangRow()">+ Add language</button>
+    </section>
+
+    <section class="card" id="s-notes">
+      <div class="card__head"><h2>07 · Anything else</h2><span class="optional-tag">optional</span></div>
+      <p class="card__hint">Priorities, reasons for looking, anything that doesn't fit the lists above.</p>
+      <textarea id="notes" placeholder="e.g. I care about an async culture with no daily standups, I prefer smaller teams…"></textarea>
+    </section>
+
+    <div class="quiz__footer">
+      <span class="fine">Every field is optional — you can come back and change it later.</span>
+      <span class="save-status" id="save-status"></span>
+      <button class="btn-primary" type="button" id="save-btn" onclick="savePreferences()">Save preferences</button>
+    </div>
+  </main>
 </div>
 
 {% include "_footer.html" %}
 
+<script src="/static/questionnaire.js"></script>
 <script>
   function toggleTheme() {
     const root = document.documentElement;

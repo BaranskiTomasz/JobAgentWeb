@@ -1,11 +1,38 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 import candidate_preferences_repo
+import criteria_repo
 from db import get_db
 from deps import get_current_user
 from models import CandidatePreferencesCreate, CandidatePreferencesUpdate
 
 router = APIRouter(prefix="/api/candidate-preferences", tags=["candidate-preferences"])
+
+
+def _sync_criteria_from_preferences(conn, user_id: int, fields: dict) -> None:
+    # Keeps the collector's location/rejected/preferred search criteria in
+    # sync whenever preferences are saved from this dashboard. Deliberately
+    # does NOT touch "title"/"search_query" criteria: JobAgent's own
+    # equivalent flow derives those via a Claude call
+    # (web/routes/candidate_preferences.py::_derive_search_queries), and this
+    # service has no Anthropic integration of its own to do that with.
+    work_mode = fields.get("work_mode") or []
+    locations = []
+    if "remote" in work_mode:
+        locations += fields.get("remote_countries") or []
+    if "hybrid" in work_mode or "onsite" in work_mode:
+        locations += fields.get("hybrid_cities") or []
+    criteria_repo.delete_by_type(conn, user_id, "location")
+    for v in locations:
+        criteria_repo.insert(conn, user_id, "location", v)
+
+    criteria_repo.delete_by_type(conn, user_id, "rejected")
+    for v in fields.get("avoided_tech") or []:
+        criteria_repo.insert(conn, user_id, "rejected", v)
+
+    criteria_repo.delete_by_type(conn, user_id, "preferred")
+    for v in fields.get("extra_tech") or []:
+        criteria_repo.insert(conn, user_id, "preferred", v)
 
 
 @router.get("")
@@ -27,6 +54,7 @@ def create(body: CandidatePreferencesCreate, user: dict = Depends(get_current_us
         pref_id = candidate_preferences_repo.insert(conn, user["id"], body.cv_profile_id, body.fields)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    _sync_criteria_from_preferences(conn, user["id"], body.fields)
     return {"id": pref_id}
 
 

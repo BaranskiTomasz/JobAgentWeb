@@ -78,3 +78,39 @@ def test_update_another_users_preferences_404s(logged_in_client, other_logged_in
 def test_delete_nonexistent_404s(logged_in_client):
     resp = logged_in_client.delete("/api/candidate-preferences/999999")
     assert resp.status_code == 404
+
+
+def test_save_syncs_location_criteria_from_work_mode(logged_in_client):
+    logged_in_client.post("/api/candidate-preferences", json={"fields": {
+        "work_mode": ["remote", "hybrid"],
+        "remote_countries": ["Poland", "Germany"],
+        "hybrid_cities": ["Warsaw"],
+    }})
+    locations = logged_in_client.get("/api/criteria/active").json()["locations"]
+    assert set(locations) == {"Poland", "Germany", "Warsaw"}
+
+
+def test_save_syncs_rejected_and_preferred_criteria_from_tech(logged_in_client):
+    logged_in_client.post("/api/candidate-preferences", json={"fields": {
+        "avoided_tech": ["PHP"], "extra_tech": ["Kubernetes"],
+    }})
+    active = logged_in_client.get("/api/criteria/active").json()
+    assert active["rejected"] == ["PHP"]
+    assert active["preferred"] == ["Kubernetes"]
+
+
+def test_save_replaces_rather_than_accumulates_synced_criteria(logged_in_client):
+    logged_in_client.post("/api/candidate-preferences", json={"fields": {"avoided_tech": ["PHP"]}})
+    logged_in_client.post("/api/candidate-preferences", json={"fields": {"avoided_tech": ["jQuery"]}})
+    rejected = logged_in_client.get("/api/criteria/active").json()["rejected"]
+    assert rejected == ["jQuery"]
+
+
+def test_save_never_touches_title_or_search_query_criteria(logged_in_client):
+    # Those are Claude-derived in JobAgent's own equivalent flow; this service
+    # has no Anthropic integration to redo that with, so a save from here
+    # must leave whatever titles/search_queries already exist untouched.
+    logged_in_client.post("/api/criteria", json={"type": "title", "value": "Backend Engineer"})
+    logged_in_client.post("/api/candidate-preferences", json={"fields": {"work_mode": ["remote"]}})
+    active = logged_in_client.get("/api/criteria/active").json()
+    assert active["titles"] == ["Backend Engineer"]

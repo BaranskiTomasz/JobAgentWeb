@@ -7,7 +7,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-import candidate_preferences_repo
 import jobs_repo
 import migrations
 import users_repo
@@ -91,8 +90,7 @@ def preferences_page(request: Request, conn=Depends(get_db)):
     user = _require_user(request, conn)
     if user is None:
         return RedirectResponse("/login", status_code=303)
-    prefs = candidate_preferences_repo.get_active(conn, user["id"])
-    return templates.TemplateResponse(request, "preferences.html", {"user": user, "prefs": prefs})
+    return templates.TemplateResponse(request, "preferences.html", {"user": user})
 
 
 @app.get("/healthz")

@@ -56,3 +56,18 @@ class TestHowItWorksRoute:
         resp = logged_in_client.get("/how-it-works")
         assert 'href="/preferences"' in resp.text
         assert "Logout" in resp.text
+
+
+class TestPreferencesRoute:
+    def test_redirects_anonymous_to_login(self, client):
+        resp = client.get("/preferences", follow_redirects=False)
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/login"
+
+    def test_reachable_when_logged_in(self, logged_in_client):
+        resp = logged_in_client.get("/preferences")
+        assert resp.status_code == 200
+        # Data is loaded client-side via fetch(), not baked into the initial
+        # HTML, so the page itself has no candidate_preferences_repo lookup
+        # to test here beyond a successful render.
+        assert 'id="save-btn"' in resp.text
