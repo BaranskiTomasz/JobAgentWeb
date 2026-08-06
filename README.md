@@ -1,6 +1,6 @@
 # JobAgentWeb
 
-The multi-tenant backend for [JobAgent](../JobAgent) — a FastAPI + Postgres service that owns all job-search data. Any number of users register their own account, browse and triage their own job pool from a small built-in dashboard, and connect their local JobAgent installation to this service as an authenticated API client. JobAgent itself has no database of its own; every read/write it makes is an HTTP call here.
+The multi-tenant backend for [JobAgent](https://github.com/tobiaszbee/JobAgent) — a FastAPI + Postgres service that owns all job-search data. Any number of users register their own account, browse and triage their own job pool from a small built-in dashboard, and connect their local JobAgent installation to this service as an authenticated API client. JobAgent itself has no database of its own; every read/write it makes is an HTTP call here.
 
 ---
 
