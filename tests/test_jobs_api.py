@@ -399,6 +399,34 @@ def test_search_limit_and_offset(logged_in_client):
     assert len(resp.json()) == 3
 
 
+def test_company_stats_count_and_applied_flag(logged_in_client, other_logged_in_client):
+    a = _create(logged_in_client, url="https://example.com/jobs/co-a", company="Acme")["job_id"]
+    b = _create(logged_in_client, url="https://example.com/jobs/co-b", company="Acme")["job_id"]
+    c = _create(logged_in_client, url="https://example.com/jobs/co-c", company="Other Co")["job_id"]
+    # Another user's own Acme application must not leak into this user's counts.
+    other_logged_in_client.post("/api/jobs", json={
+        "title": "Backend Engineer", "company": "Acme", "location": "Remote",
+        "url": "https://example.com/jobs/co-other", "source": "linkedin",
+    })
+
+    resp = logged_in_client.get("/api/jobs")
+    by_id = {j["id"]: j for j in resp.json()}
+    assert by_id[a]["company_total_count"] == 2
+    assert by_id[b]["company_total_count"] == 2
+    assert by_id[c]["company_total_count"] == 1
+    assert by_id[a]["company_applied_count"] == 0
+    assert by_id[b]["company_applied_count"] == 0
+
+    logged_in_client.patch(f"/api/jobs/{a}/status", json={"status": "applied"})
+
+    resp = logged_in_client.get("/api/jobs")
+    by_id = {j["id"]: j for j in resp.json()}
+    # Both Acme postings report the same applied-count, including the applied one itself.
+    assert by_id[a]["company_applied_count"] == 1
+    assert by_id[b]["company_applied_count"] == 1
+    assert by_id[c]["company_applied_count"] == 0
+
+
 def test_stats_endpoint(logged_in_client):
     a = _create(logged_in_client, url="https://example.com/jobs/a")["job_id"]
     logged_in_client.patch(f"/api/jobs/{a}/status", json={"status": "applied"})

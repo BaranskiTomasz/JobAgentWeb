@@ -34,6 +34,8 @@ class JobOut(BaseModel):
     would_apply_reason: str | None
     created_at: datetime
     updated_at: datetime
+    company_total_count: int
+    company_applied_count: int
 
 
 class JobCreate(BaseModel):

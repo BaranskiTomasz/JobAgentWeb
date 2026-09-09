@@ -23,6 +23,8 @@ _SCHEMA = """
         updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE INDEX IF NOT EXISTS idx_job_postings_company ON job_postings(company);
+
     CREATE TABLE IF NOT EXISTS job_embeddings (
         job_id     TEXT PRIMARY KEY REFERENCES job_postings(id) ON DELETE CASCADE,
         embedding  TEXT,

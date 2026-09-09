@@ -15,9 +15,23 @@ _JOB_COLUMNS = """
     ujs.status, ujs.score, ujs.score_reason, ujs.score_breakdown::text, ujs.rejection_reason,
     ujs.embedding_score, ujs.rerank_score, ujs.listwise_rank, ujs.rank_reason,
     ujs.debate_flag, ujs.debate_note, ujs.would_apply, ujs.would_apply_reason,
-    ujs.created_at, ujs.updated_at
+    ujs.created_at, ujs.updated_at,
+    comp.total_count AS company_total_count, comp.applied_count AS company_applied_count
 """
-_JOB_FROM = "FROM job_postings jp JOIN user_job_states ujs ON ujs.job_id = jp.id"
+# Per-company stats (this user's own postings only), correlated via ujs.user_id/jp.company
+# rather than a bound parameter, so every _JOB_FROM call site gets it for free with no
+# extra param plumbing. A plain aggregate subquery always returns exactly one row even
+# with zero matches (COUNT(*) = 0), so this is a plain JOIN LATERAL, not a LEFT JOIN.
+_JOB_FROM = """
+    FROM job_postings jp
+    JOIN user_job_states ujs ON ujs.job_id = jp.id
+    JOIN LATERAL (
+        SELECT COUNT(*) AS total_count, COUNT(*) FILTER (WHERE ujs2.status = 'applied') AS applied_count
+        FROM job_postings jp2
+        JOIN user_job_states ujs2 ON ujs2.job_id = jp2.id
+        WHERE ujs2.user_id = ujs.user_id AND jp2.company = jp.company
+    ) comp ON TRUE
+"""
 
 
 def _generate_id(url: str) -> str:
