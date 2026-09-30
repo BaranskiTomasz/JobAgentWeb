@@ -1,5 +1,8 @@
 import hashlib
 import json
+import re
+import unicodedata
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from psycopg2.extras import execute_values
 
@@ -12,9 +15,9 @@ _JOB_COLUMNS = """
     jp.id, jp.title, jp.company, jp.location, jp.url, jp.description, jp.source,
     jp.source_id, jp.search_query, jp.structured_data::text, jp.posted_at, jp.source_structured_data::text,
     jp.created_at AS posting_created_at, jp.updated_at AS posting_updated_at,
-    ujs.status, ujs.score, ujs.score_reason, ujs.score_breakdown::text, ujs.rejection_reason,
+    ujs.status, ujs.score, ujs.score_reason, ujs.score_breakdown::text, ujs.score_fingerprint, ujs.rejection_reason,
     ujs.embedding_score, ujs.rerank_score, ujs.listwise_rank, ujs.rank_reason,
-    ujs.debate_flag, ujs.debate_note, ujs.would_apply, ujs.would_apply_reason,
+    ujs.debate_flag, ujs.debate_note, ujs.ranking_fingerprint, ujs.would_apply, ujs.would_apply_reason,
     ujs.created_at, ujs.updated_at,
     comp.total_count AS company_total_count, comp.applied_count AS company_applied_count
 """
@@ -38,6 +41,92 @@ def _generate_id(url: str) -> str:
     return hashlib.md5(url.encode()).hexdigest()[:16]
 
 
+_TRACKING_PARAMS = {
+    "fbclid", "gclid", "mc_cid", "mc_eid", "referrer",
+    "trk", "trackingid",
+}
+
+
+def canonicalize_url(url: str) -> str:
+    value = url.strip()
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return value
+    if not parsed.scheme or not parsed.netloc:
+        return value
+    original_scheme = parsed.scheme.lower()
+    scheme = "https" if original_scheme in {"http", "https"} else original_scheme
+    hostname = (parsed.hostname or "").lower()
+    if hostname.startswith("www."):
+        hostname = hostname[4:]
+    port = parsed.port
+    netloc = hostname
+    if port and not (original_scheme == "http" and port == 80) and not (original_scheme == "https" and port == 443):
+        netloc = f"{hostname}:{port}"
+    path = re.sub(r"/{2,}", "/", parsed.path or "/")
+    if path != "/":
+        path = path.rstrip("/")
+    query = urlencode(sorted(
+        (key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.lower().startswith("utm_") and key.lower() not in _TRACKING_PARAMS
+    ))
+    return urlunsplit((scheme, netloc, path, query, ""))
+
+
+def _normalize_fingerprint_text(value: str | None) -> str:
+    text = (value or "").translate(str.maketrans({"ł": "l", "Ł": "L", "ø": "o", "Ø": "O"}))
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(char for char in text if not unicodedata.combining(char)).lower()
+    return " ".join(re.findall(r"[a-z0-9+#.]+", text))
+
+
+def _normalize_identity_text(value: str | None) -> str:
+    return " ".join(re.findall(r"[a-z0-9+#]+", _normalize_fingerprint_text(value)))
+
+
+def content_fingerprint(job: dict) -> str | None:
+    title = _normalize_fingerprint_text(job.get("title"))
+    company = _normalize_fingerprint_text(job.get("company"))
+    location = _normalize_fingerprint_text(job.get("location"))
+    description = _normalize_fingerprint_text(job.get("description"))
+    if not title or not company or len(description) < 100:
+        return None
+    payload = "\n".join((title, company, location, description))
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def identity_fingerprint(job: dict) -> str | None:
+    title = _normalize_identity_text(job.get("title"))
+    company = _normalize_identity_text(job.get("company"))
+    if not title or not company:
+        return None
+    return hashlib.sha256(f"{company}\n{title}".encode()).hexdigest()
+
+
+def _description_similarity(left: str | None, right: str | None) -> float:
+    left_tokens = set(_normalize_fingerprint_text(left).split())
+    right_tokens = set(_normalize_fingerprint_text(right).split())
+    if len(left_tokens) < 20 or len(right_tokens) < 20:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+
+def _locations_compatible(left: str | None, right: str | None) -> bool:
+    left_value = _normalize_identity_text(left)
+    right_value = _normalize_identity_text(right)
+    if not left_value or not right_value:
+        return False
+    if left_value == right_value:
+        return True
+    generic = {"remote", "worldwide", "global", "anywhere"}
+    left_scope = set(left_value.split()) - generic
+    right_scope = set(right_value.split()) - generic
+    if not left_scope or not right_scope:
+        return not left_scope and not right_scope
+    return bool(left_scope & right_scope)
+
+
 def _row_to_job(row: dict) -> dict:
     row = dict(row)
     if row.get("would_apply") is not None:
@@ -54,21 +143,76 @@ def insert(conn, user_id: int, job: dict) -> dict:
     # racing on the same URL safe: job_id is deterministic from the URL, so
     # it's correct whichever of the two INSERTs actually wins.
     cur = dict_cursor(conn)
-    job_id = _generate_id(job["url"])
+    canonical_url = canonicalize_url(job["url"])
+    identity = identity_fingerprint(job)
+    fingerprint = content_fingerprint(job)
+    job_id = _generate_id(canonical_url)
 
     cur.execute(
         # No conflict target: id and url are both unique and both deterministic
         # from the same url, so targeting just one leaves the other race open.
-        """INSERT INTO job_postings (id, title, company, location, url, description, source, source_id, search_query, posted_at, source_structured_data)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """INSERT INTO job_postings (id, title, company, location, url, canonical_url, identity_fingerprint, content_fingerprint, description, source, source_id, search_query, posted_at, source_structured_data)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            ON CONFLICT DO NOTHING
            RETURNING id""",
-        (job_id, job["title"], job.get("company"), job.get("location"), job["url"],
+        (job_id, job["title"], job.get("company"), job.get("location"), job["url"], canonical_url, identity, fingerprint,
          job.get("description"), job.get("source", "linkedin"), job.get("source_id"),
          job.get("search_query"), job.get("posted_at"),
          json.dumps(job["source_structured_data"], ensure_ascii=False) if job.get("source_structured_data") else None),
     )
     posting_created = cur.fetchone() is not None
+
+    if not posting_created:
+        cur.execute(
+            """SELECT id FROM job_postings
+               WHERE url = %s OR canonical_url = %s
+               ORDER BY CASE WHEN url = %s THEN 0 ELSE 1 END
+               LIMIT 1""",
+            (job["url"], canonical_url, job["url"]),
+        )
+        existing = cur.fetchone()
+        if existing:
+            job_id = existing["id"]
+
+    if posting_created and identity and job.get("description"):
+        cur.execute(
+            """SELECT id, description, location, source, source_id, content_fingerprint FROM job_postings
+               WHERE (identity_fingerprint = %s OR (%s IS NOT NULL AND content_fingerprint = %s)) AND id != %s
+                 AND source IS DISTINCT FROM %s
+                 AND created_at >= CURRENT_TIMESTAMP - INTERVAL '45 days'
+               ORDER BY created_at DESC LIMIT 20""",
+            (identity, fingerprint, fingerprint, job_id, job.get("source")),
+        )
+        duplicate = next(
+            (
+                row for row in cur.fetchall()
+                if _locations_compatible(row["location"], job.get("location"))
+                and (
+                    fingerprint is not None and row["content_fingerprint"] == fingerprint
+                    or _description_similarity(row["description"], job["description"]) >= 0.82
+                )
+            ),
+            None,
+        )
+        if duplicate:
+            cur.execute("DELETE FROM job_postings WHERE id = %s", (job_id,))
+            job_id = duplicate["id"]
+            posting_created = False
+
+    alias_metadata = {
+        "search_query": job.get("search_query"),
+        "source_structured_data": job.get("source_structured_data"),
+    }
+    cur.execute(
+        """INSERT INTO job_posting_aliases (job_id, url, canonical_url, source, source_id, metadata)
+           VALUES (%s, %s, %s, %s, %s, %s)
+           ON CONFLICT (job_id, url, source) DO UPDATE SET
+               source = COALESCE(job_posting_aliases.source, EXCLUDED.source),
+               source_id = COALESCE(job_posting_aliases.source_id, EXCLUDED.source_id),
+               metadata = COALESCE(job_posting_aliases.metadata, EXCLUDED.metadata)""",
+        (job_id, job["url"], canonical_url, job.get("source"), job.get("source_id"),
+         json.dumps(alias_metadata, ensure_ascii=False)),
+    )
 
     cur.execute(
         "INSERT INTO user_job_states (user_id, job_id) VALUES (%s, %s) ON CONFLICT (user_id, job_id) DO NOTHING RETURNING id",
@@ -78,6 +222,19 @@ def insert(conn, user_id: int, job: dict) -> dict:
         return {"job_id": None, "posting_created": False}
 
     return {"job_id": job_id, "posting_created": posting_created}
+
+
+def get_aliases(conn, user_id: int, job_id: str) -> list[dict]:
+    cur = dict_cursor(conn)
+    cur.execute(
+        """SELECT a.url, a.canonical_url, a.source, a.source_id, a.metadata::text, a.created_at
+           FROM job_posting_aliases a
+           JOIN user_job_states ujs ON ujs.job_id = a.job_id
+           WHERE ujs.user_id = %s AND a.job_id = %s
+           ORDER BY a.created_at, a.id""",
+        (user_id, job_id),
+    )
+    return [dict(row) for row in cur.fetchall()]
 
 
 def get_by_id(conn, user_id: int, job_id: str) -> dict | None:
@@ -145,12 +302,12 @@ def update_status(conn, user_id: int, job_id: str, status: str, rejection_reason
         )
 
 
-def update_score(conn, user_id: int, job_id: str, score: float | None, reason: str, breakdown: dict | None = None) -> None:
+def update_score(conn, user_id: int, job_id: str, score: float | None, reason: str, breakdown: dict | None = None, fingerprint: str | None = None) -> None:
     cur = conn.cursor()
     cur.execute(
-        "UPDATE user_job_states SET score = %s, score_reason = %s, score_breakdown = %s, updated_at = CURRENT_TIMESTAMP"
+        "UPDATE user_job_states SET score = %s, score_reason = %s, score_breakdown = %s, score_fingerprint = %s, updated_at = CURRENT_TIMESTAMP"
         " WHERE user_id = %s AND job_id = %s",
-        (score, reason, json.dumps(breakdown, ensure_ascii=False) if breakdown is not None else None, user_id, job_id),
+        (score, reason, json.dumps(breakdown, ensure_ascii=False) if breakdown is not None else None, fingerprint, user_id, job_id),
     )
 
 
@@ -164,14 +321,15 @@ def update_ranking_scores(
     rank_reason: str | None = None,
     debate_flag: str | None = None,
     debate_note: str | None = None,
+    fingerprint: str | None = None,
 ) -> None:
     cur = conn.cursor()
     cur.execute(
         """UPDATE user_job_states
            SET embedding_score = %s, rerank_score = %s, listwise_rank = %s, rank_reason = %s,
-               debate_flag = %s, debate_note = %s, updated_at = CURRENT_TIMESTAMP
+               debate_flag = %s, debate_note = %s, ranking_fingerprint = %s, updated_at = CURRENT_TIMESTAMP
            WHERE user_id = %s AND job_id = %s""",
-        (embedding_score, rerank_score, listwise_rank, rank_reason, debate_flag, debate_note, user_id, job_id),
+        (embedding_score, rerank_score, listwise_rank, rank_reason, debate_flag, debate_note, fingerprint, user_id, job_id),
     )
 
 
@@ -193,7 +351,7 @@ def update_ranking_scores_batch(conn, user_id: int, items: list[dict]) -> int:
     cur = conn.cursor()
     rows = [
         (user_id, item["job_id"], item.get("embedding_score"), item.get("rerank_score"),
-         item.get("listwise_rank"), item.get("rank_reason"), item.get("debate_flag"), item.get("debate_note"))
+         item.get("listwise_rank"), item.get("rank_reason"), item.get("debate_flag"), item.get("debate_note"), item.get("fingerprint"))
         for item in items
     ]
     execute_values(
@@ -205,8 +363,9 @@ def update_ranking_scores_batch(conn, user_id: int, items: list[dict]) -> int:
                rank_reason = v.rank_reason::text,
                debate_flag = v.debate_flag::text,
                debate_note = v.debate_note::text,
+               ranking_fingerprint = v.fingerprint::text,
                updated_at = CURRENT_TIMESTAMP
-           FROM (VALUES %s) AS v(user_id, job_id, embedding_score, rerank_score, listwise_rank, rank_reason, debate_flag, debate_note)
+           FROM (VALUES %s) AS v(user_id, job_id, embedding_score, rerank_score, listwise_rank, rank_reason, debate_flag, debate_note, fingerprint)
            WHERE ujs.user_id = v.user_id::integer AND ujs.job_id = v.job_id::text""",
         rows,
     )
@@ -317,12 +476,12 @@ def update_description(conn, job_id: str, description: str) -> None:
     )
 
 
-def update_score_and_status(conn, user_id: int, job_id: str, score: float | None, reason: str, status: str, breakdown: dict | None = None) -> None:
+def update_score_and_status(conn, user_id: int, job_id: str, score: float | None, reason: str, status: str, breakdown: dict | None = None, fingerprint: str | None = None) -> None:
     cur = conn.cursor()
     cur.execute(
-        "UPDATE user_job_states SET score = %s, score_reason = %s, score_breakdown = %s, status = %s, updated_at = CURRENT_TIMESTAMP"
+        "UPDATE user_job_states SET score = %s, score_reason = %s, score_breakdown = %s, score_fingerprint = %s, status = %s, updated_at = CURRENT_TIMESTAMP"
         " WHERE user_id = %s AND job_id = %s",
-        (score, reason, json.dumps(breakdown, ensure_ascii=False) if breakdown is not None else None, status, user_id, job_id),
+        (score, reason, json.dumps(breakdown, ensure_ascii=False) if breakdown is not None else None, fingerprint, status, user_id, job_id),
     )
 
 
@@ -354,6 +513,19 @@ def get_new_with_descriptions(conn, user_id: int) -> list[dict]:
             WHERE ujs.user_id = %s AND ujs.status = 'new'
               AND jp.description IS NOT NULL AND jp.description != ''
             ORDER BY ujs.created_at DESC""",
+        (user_id,),
+    )
+    return [_row_to_job(r) for r in cur.fetchall()]
+
+
+def get_dealbreaker_rejected_with_descriptions(conn, user_id: int) -> list[dict]:
+    cur = dict_cursor(conn)
+    cur.execute(
+        f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
+            WHERE ujs.user_id = %s AND ujs.status = 'auto_rejected'
+              AND ujs.score_reason LIKE 'Dealbreaker:%%'
+              AND jp.description IS NOT NULL AND jp.description != ''
+            ORDER BY ujs.updated_at DESC""",
         (user_id,),
     )
     return [_row_to_job(r) for r in cur.fetchall()]

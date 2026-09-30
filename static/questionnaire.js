@@ -186,17 +186,22 @@ async function savePreferences() {
   status.textContent = 'Saving…';
 
   const salaryMin = document.getElementById('salary-min').value;
+  const seniorityLevels = getToggledValues('seniority-group');
+  const companyTypes = getToggledValues('company-group');
 
   const fields = {
     work_mode: getToggledValues('workmode-group'),
-    remote_countries: getChipValues('country-chips'),
+    work_country: document.getElementById('work-country').value.trim(),
+    employer_countries: getChipValues('country-chips'),
     hybrid_cities: getChipValues('city-chips'),
     salary_min: salaryMin ? parseInt(salaryMin, 10) : null,
     salary_currency: document.getElementById('salary-currency').value,
     show_jobs_without_salary: document.getElementById('show-no-salary').checked ? 1 : 0,
-    seniority_levels: getToggledValues('seniority-group'),
+    seniority_levels: seniorityLevels,
+    required_seniority_levels: document.getElementById('seniority-hard').checked ? seniorityLevels : [],
     role_types: getToggledValues('role-group'),
-    preferred_company_types: getToggledValues('company-group'),
+    preferred_company_types: companyTypes,
+    required_company_types: document.getElementById('company-hard').checked ? companyTypes : [],
     extra_tech: getChipValues('tech-chips'),
     avoided_tech: getChipValues('avoid-chips'),
     languages: getLanguages(),
@@ -256,7 +261,9 @@ async function init() {
   }
 
   setToggled('workmode-group', prefs ? prefs.work_mode : ['remote']);
-  (prefs ? prefs.remote_countries : []).forEach(c => addChipValue('country-chips', c));
+  const legacyWorkCountry = prefs && (prefs.remote_countries || []).length === 1 ? prefs.remote_countries[0] : '';
+  document.getElementById('work-country').value = prefs ? (prefs.work_country || legacyWorkCountry) : '';
+  (prefs ? (prefs.employer_countries || []) : []).forEach(c => addChipValue('country-chips', c));
   (prefs ? prefs.hybrid_cities : []).forEach(c => addChipValue('city-chips', c));
   updateWorkModePanels();
 
@@ -267,8 +274,10 @@ async function init() {
   }
 
   setToggled('seniority-group', prefs ? prefs.seniority_levels : []);
+  document.getElementById('seniority-hard').checked = !!(prefs && (prefs.required_seniority_levels || []).length);
   setToggled('role-group', prefs ? prefs.role_types : []);
   setToggled('company-group', prefs ? prefs.preferred_company_types : []);
+  document.getElementById('company-hard').checked = !!(prefs && (prefs.required_company_types || []).length);
 
   (prefs ? (prefs.extra_tech || []) : []).forEach(t => addChipValue('tech-chips', t));
   (prefs ? (prefs.avoided_tech || []) : []).forEach(t => addChipValue('avoid-chips', t));

@@ -12,7 +12,8 @@ router = APIRouter(prefix="/api/search-stats", tags=["search-stats"])
 def record(body: SearchStatRecord, user: dict = Depends(get_current_user), conn=Depends(get_db)):
     search_stats_repo.record(
         conn, user["id"], body.session_id, body.source, body.search_query,
-        body.location, body.cards_found, body.new_found,
+        body.location, body.cards_found, body.new_found, body.upstream_found,
+        body.query_matched, body.date_matched, body.geo_matched,
     )
     return {"ok": True}
 

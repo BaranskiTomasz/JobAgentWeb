@@ -16,6 +16,16 @@ def get_indexed_ids(conn, user_id: int) -> set[str]:
     return {r["job_id"] for r in cur.fetchall()}
 
 
+def get_indexed_metadata(conn, user_id: int) -> dict[str, dict]:
+    cur = dict_cursor(conn)
+    cur.execute(
+        """SELECT je.job_id, je.model, je.text_hash FROM job_embeddings je
+           JOIN user_job_states ujs ON ujs.job_id = je.job_id WHERE ujs.user_id = %s""",
+        (user_id,),
+    )
+    return {r["job_id"]: {"model": r["model"], "text_hash": r["text_hash"]} for r in cur.fetchall()}
+
+
 def get_unindexed(conn, user_id: int) -> list[dict]:
     cur = dict_cursor(conn)
     cur.execute("""
@@ -45,9 +55,10 @@ def upsert_many(conn, items: list[dict]) -> int:
     cur = conn.cursor()
     for item in items:
         cur.execute(
-            """INSERT INTO job_embeddings (job_id, embedding, model) VALUES (%s, %s, %s)
-               ON CONFLICT (job_id) DO UPDATE SET embedding = excluded.embedding, model = excluded.model""",
-            (item["job_id"], json.dumps(item["embedding"]), item["model"]),
+            """INSERT INTO job_embeddings (job_id, embedding, model, text_hash) VALUES (%s, %s, %s, %s)
+               ON CONFLICT (job_id) DO UPDATE SET embedding = excluded.embedding, model = excluded.model,
+                                                    text_hash = excluded.text_hash""",
+            (item["job_id"], json.dumps(item["embedding"]), item["model"], item.get("text_hash")),
         )
     return len(items)
 
@@ -92,22 +103,22 @@ def score_by_similarity(conn, user_id: int, ideal: list[float], job_ids: list[st
 _DECISION_VECTOR_LIMIT = 50
 
 
-def get_decision_vectors(conn, user_id: int) -> dict:
+def get_decision_vectors(conn, user_id: int, model: str | None = None) -> dict:
     # Capped and most-recent-first, not full history: an unbounded centroid
     # never lets a candidate's search intent (e.g. backend to platform) shift.
     cur = dict_cursor(conn)
     cur.execute(
         """SELECT je.embedding FROM job_embeddings je JOIN user_job_states ujs ON ujs.job_id = je.job_id
-           WHERE ujs.user_id = %s AND ujs.status = 'applied'
+           WHERE ujs.user_id = %s AND ujs.status = 'applied' AND (%s IS NULL OR je.model = %s)
            ORDER BY ujs.updated_at DESC LIMIT %s""",
-        (user_id, _DECISION_VECTOR_LIMIT),
+        (user_id, model, model, _DECISION_VECTOR_LIMIT),
     )
     applied = [json.loads(r["embedding"]) for r in cur.fetchall()]
     cur.execute(
         """SELECT je.embedding FROM job_embeddings je JOIN user_job_states ujs ON ujs.job_id = je.job_id
-           WHERE ujs.user_id = %s AND ujs.status = 'rejected'
+           WHERE ujs.user_id = %s AND ujs.status = 'rejected' AND (%s IS NULL OR je.model = %s)
            ORDER BY ujs.updated_at DESC LIMIT %s""",
-        (user_id, _DECISION_VECTOR_LIMIT),
+        (user_id, model, model, _DECISION_VECTOR_LIMIT),
     )
     rejected = [json.loads(r["embedding"]) for r in cur.fetchall()]
     return {"applied": applied, "rejected": rejected}

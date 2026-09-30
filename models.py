@@ -22,6 +22,7 @@ class JobOut(BaseModel):
     score: float | None
     score_reason: str | None
     score_breakdown: str | None
+    score_fingerprint: str | None
     rejection_reason: str | None
     structured_data: str | None
     embedding_score: float | None
@@ -30,6 +31,7 @@ class JobOut(BaseModel):
     rank_reason: str | None
     debate_flag: str | None
     debate_note: str | None
+    ranking_fingerprint: str | None
     would_apply: bool | None
     would_apply_reason: str | None
     created_at: datetime
@@ -65,6 +67,7 @@ class JobScoreUpdate(BaseModel):
     score: float | None
     reason: str
     breakdown: dict | None = None
+    fingerprint: str | None = None
 
 
 class JobRankingUpdate(BaseModel):
@@ -74,6 +77,7 @@ class JobRankingUpdate(BaseModel):
     rank_reason: str | None = None
     debate_flag: str | None = None
     debate_note: str | None = None
+    fingerprint: str | None = None
 
 
 class JobRankingBatchItem(JobRankingUpdate):
@@ -97,6 +101,7 @@ class JobScoreAndStatusUpdate(BaseModel):
     reason: str
     status: _JOB_STATUSES
     breakdown: dict | None = None
+    fingerprint: str | None = None
 
 
 class JobWouldApplyUpdate(BaseModel):
@@ -197,6 +202,10 @@ class SearchStatRecord(BaseModel):
     location: str
     cards_found: int = 0
     new_found: int = 0
+    upstream_found: int | None = None
+    query_matched: int | None = None
+    date_matched: int | None = None
+    geo_matched: int | None = None
 
 
 # Sessions
@@ -228,6 +237,7 @@ class EmbeddingItem(BaseModel):
     job_id: str
     embedding: list[float]
     model: str
+    text_hash: str | None = None
 
 
 class EmbeddingBatchUpsert(BaseModel):

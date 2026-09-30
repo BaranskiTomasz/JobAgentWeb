@@ -19,6 +19,15 @@ def test_upsert_and_get_ids(logged_in_client):
     assert ids == [job_id]
 
 
+def test_embedding_metadata_tracks_model_and_text_hash(logged_in_client):
+    job_id = _create(logged_in_client, url="https://example.com/jobs/metadata")
+    logged_in_client.post("/api/embeddings", json={
+        "items": [{"job_id": job_id, "embedding": [0.1], "model": "voyage-4", "text_hash": "abc"}],
+    })
+    metadata = logged_in_client.get("/api/embeddings/metadata").json()
+    assert metadata[job_id] == {"model": "voyage-4", "text_hash": "abc"}
+
+
 def test_upsert_is_idempotent_replace(logged_in_client):
     job_id = _create(logged_in_client)
     logged_in_client.post("/api/embeddings", json={

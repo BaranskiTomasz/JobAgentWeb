@@ -78,6 +78,11 @@ def get_new_with_descriptions(user: dict = Depends(get_current_user), conn=Depen
     return jobs_repo.get_new_with_descriptions(conn, user["id"])
 
 
+@router.get("/dealbreaker-rejected-with-descriptions", response_model=list[JobOut])
+def get_dealbreaker_rejected_with_descriptions(user: dict = Depends(get_current_user), conn=Depends(get_db)):
+    return jobs_repo.get_dealbreaker_rejected_with_descriptions(conn, user["id"])
+
+
 @router.get("/for-ranking", response_model=list[JobOut])
 def get_jobs_for_ranking(limit: int = 2000, user: dict = Depends(get_current_user), conn=Depends(get_db)):
     return jobs_repo.get_jobs_for_ranking(conn, user["id"], limit)
@@ -164,6 +169,12 @@ def get_job(job_id: str, user: dict = Depends(get_current_user), conn=Depends(ge
     return _get_or_404(conn, user["id"], job_id)
 
 
+@router.get("/{job_id}/aliases")
+def get_job_aliases(job_id: str, user: dict = Depends(get_current_user), conn=Depends(get_db)):
+    _get_or_404(conn, user["id"], job_id)
+    return jobs_repo.get_aliases(conn, user["id"], job_id)
+
+
 @router.post("", response_model=JobCreateResult)
 def create_job(job: JobCreate, user: dict = Depends(get_current_user), conn=Depends(get_db)):
     result = jobs_repo.insert(conn, user["id"], job.model_dump())
@@ -180,14 +191,14 @@ def update_status(job_id: str, body: JobStatusUpdate, user: dict = Depends(get_c
 @router.patch("/{job_id}/score", response_model=JobOut)
 def update_score(job_id: str, body: JobScoreUpdate, user: dict = Depends(get_current_user), conn=Depends(get_db)):
     _get_or_404(conn, user["id"], job_id)
-    jobs_repo.update_score(conn, user["id"], job_id, body.score, body.reason, body.breakdown)
+    jobs_repo.update_score(conn, user["id"], job_id, body.score, body.reason, body.breakdown, body.fingerprint)
     return jobs_repo.get_by_id(conn, user["id"], job_id)
 
 
 @router.patch("/{job_id}/score-and-status", response_model=JobOut)
 def update_score_and_status(job_id: str, body: JobScoreAndStatusUpdate, user: dict = Depends(get_current_user), conn=Depends(get_db)):
     _get_or_404(conn, user["id"], job_id)
-    jobs_repo.update_score_and_status(conn, user["id"], job_id, body.score, body.reason, body.status, body.breakdown)
+    jobs_repo.update_score_and_status(conn, user["id"], job_id, body.score, body.reason, body.status, body.breakdown, body.fingerprint)
     return jobs_repo.get_by_id(conn, user["id"], job_id)
 
 
@@ -203,7 +214,7 @@ def update_ranking(job_id: str, body: JobRankingUpdate, user: dict = Depends(get
     _get_or_404(conn, user["id"], job_id)
     jobs_repo.update_ranking_scores(
         conn, user["id"], job_id, body.embedding_score, body.rerank_score, body.listwise_rank,
-        body.rank_reason, body.debate_flag, body.debate_note,
+        body.rank_reason, body.debate_flag, body.debate_note, body.fingerprint,
     )
     return jobs_repo.get_by_id(conn, user["id"], job_id)
 

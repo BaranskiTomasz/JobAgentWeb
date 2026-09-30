@@ -13,6 +13,11 @@ def indexed_ids(user: dict = Depends(get_current_user), conn=Depends(get_db)):
     return {"job_ids": list(embeddings_repo.get_indexed_ids(conn, user["id"]))}
 
 
+@router.get("/metadata")
+def indexed_metadata(user: dict = Depends(get_current_user), conn=Depends(get_db)):
+    return embeddings_repo.get_indexed_metadata(conn, user["id"])
+
+
 @router.get("/unindexed")
 def unindexed(user: dict = Depends(get_current_user), conn=Depends(get_db)):
     return embeddings_repo.get_unindexed(conn, user["id"])
@@ -40,5 +45,5 @@ def similarity(body: EmbeddingSimilarityRequest, user: dict = Depends(get_curren
 
 
 @router.get("/decision-vectors")
-def decision_vectors(user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    return embeddings_repo.get_decision_vectors(conn, user["id"])
+def decision_vectors(model: str | None = None, user: dict = Depends(get_current_user), conn=Depends(get_db)):
+    return embeddings_repo.get_decision_vectors(conn, user["id"], model)

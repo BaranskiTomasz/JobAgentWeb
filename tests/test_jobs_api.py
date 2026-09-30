@@ -1,5 +1,6 @@
 import json
 import threading
+import uuid
 
 import db as db_module
 import jobs_repo
@@ -102,6 +103,80 @@ def test_create_job_duplicate_for_same_user_is_ignored(logged_in_client):
     resp = logged_in_client.get("/api/jobs", params={"query": "Backend"})
     assert len(resp.json()) == 1
     assert resp.json()[0]["id"] == result["job_id"]
+
+
+def test_tracking_url_variants_are_deduplicated(logged_in_client):
+    first = _create(logged_in_client, url="https://www.example.com/jobs/1/?utm_source=linkedin")
+    second = _create(logged_in_client, url="https://example.com/jobs/1")
+
+    assert first["job_id"] is not None
+    assert second["job_id"] is None
+
+    aliases = logged_in_client.get(f"/api/jobs/{first['job_id']}/aliases")
+    assert aliases.status_code == 200
+    assert {item["source"] for item in aliases.json()} == {"linkedin"}
+    assert len(aliases.json()) == 2
+
+
+def test_identical_cross_source_content_is_deduplicated_and_aliases_are_preserved(logged_in_client):
+    token = uuid.uuid4().hex
+    description = "Build reliable distributed backend services in Python and PostgreSQL. " * 4
+    first = _create(
+        logged_in_client,
+        url=f"https://boards.greenhouse.io/acme/jobs/{token}",
+        company=f"Acme {token}",
+        source="greenhouse",
+        source_id="acme:123",
+        description=description,
+    )
+    second = _create(
+        logged_in_client,
+        url=f"https://www.linkedin.com/jobs/view/{token}",
+        company=f"Acme {token}",
+        source="linkedin",
+        source_id="987",
+        description=description,
+    )
+
+    assert second["job_id"] is None
+    aliases = logged_in_client.get(f"/api/jobs/{first['job_id']}/aliases").json()
+    assert {(item["source"], item["source_id"]) for item in aliases} == {
+        ("greenhouse", "acme:123"), ("linkedin", "987"),
+    }
+
+
+def test_same_source_distinct_requisitions_are_not_fuzzy_deduplicated(logged_in_client):
+    token = uuid.uuid4().hex
+    description = "Build reliable distributed backend services in Python and PostgreSQL. " * 4
+    first = _create(logged_in_client, url=f"https://boards.example/jobs/{token}-1", company=f"Acme {token}", source="greenhouse", source_id="1", description=description)
+    second = _create(logged_in_client, url=f"https://boards.example/jobs/{token}-2", company=f"Acme {token}", source="greenhouse", source_id="2", description=description)
+    assert first["job_id"] is not None
+    assert second["job_id"] is not None
+
+
+def test_cross_source_jobs_in_different_locations_are_not_fuzzy_deduplicated(logged_in_client):
+    token = uuid.uuid4().hex
+    description = "Build reliable distributed backend services in Python and PostgreSQL. " * 4
+    first = _create(logged_in_client, url=f"https://boards.example/jobs/{token}-eu", company=f"Acme {token}", source="greenhouse", location="Europe", description=description)
+    second = _create(logged_in_client, url=f"https://linkedin.example/jobs/{token}-us", company=f"Acme {token}", source="linkedin", location="United States", description=description)
+    assert first["job_id"] is not None
+    assert second["job_id"] is not None
+
+
+def test_similar_jobs_with_different_content_are_not_deduplicated(logged_in_client):
+    first = _create(
+        logged_in_client,
+        url="https://example.com/jobs/backend-a",
+        description="Build the payments platform with Python and PostgreSQL. " * 4,
+    )
+    second = _create(
+        logged_in_client,
+        url="https://example.com/jobs/backend-b",
+        description="Build the observability platform with Go and ClickHouse. " * 4,
+    )
+
+    assert first["job_id"] != second["job_id"]
+    assert second["posting_created"] is True
 
 
 def test_create_job_different_title_company_not_deduped(logged_in_client):

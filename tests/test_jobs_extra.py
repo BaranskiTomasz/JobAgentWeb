@@ -87,6 +87,24 @@ def test_update_score_and_status(logged_in_client):
     assert body["status"] == "auto_rejected"
 
 
+def test_score_fingerprint_round_trips(logged_in_client):
+    job_id = _create(logged_in_client)["job_id"]
+    response = logged_in_client.patch(f"/api/jobs/{job_id}/score", json={
+        "score": 8.0, "reason": "fit", "fingerprint": "score-v1",
+    })
+    assert response.status_code == 200
+    assert response.json()["score_fingerprint"] == "score-v1"
+
+
+def test_ranking_fingerprint_round_trips_in_batch(logged_in_client):
+    job_id = _create(logged_in_client)["job_id"]
+    response = logged_in_client.patch("/api/jobs/ranking", json={"items": [{
+        "job_id": job_id, "listwise_rank": 1, "fingerprint": "ranking-v1",
+    }]})
+    assert response.status_code == 200
+    assert logged_in_client.get(f"/api/jobs/{job_id}").json()["ranking_fingerprint"] == "ranking-v1"
+
+
 def test_get_new_unscored_new_with_descriptions(logged_in_client):
     with_desc = _create(logged_in_client, url="https://example.com/jobs/a")["job_id"]
     no_desc = _create(logged_in_client, url="https://example.com/jobs/b", description=None)["job_id"]

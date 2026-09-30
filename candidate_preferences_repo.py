@@ -5,11 +5,12 @@ from db import dict_cursor
 # List-valued fields, stored as JSON text (this table predates the JSONB columns
 # elsewhere; cv_profiles.parsed still follows the same TEXT convention).
 _JSON_FIELDS = {
-    "work_mode", "remote_countries", "hybrid_cities", "seniority_levels", "role_types",
-    "preferred_company_types", "extra_tech", "avoided_tech", "languages",
+    "work_mode", "remote_countries", "employer_countries", "hybrid_cities", "seniority_levels",
+    "required_seniority_levels", "role_types", "preferred_company_types", "required_company_types",
+    "extra_tech", "avoided_tech", "languages",
 }
 _SCALAR_FIELDS = {
-    "salary_min", "salary_currency", "show_jobs_without_salary", "open_notes",
+    "work_country", "salary_min", "salary_currency", "show_jobs_without_salary", "open_notes",
 }
 _VALID_FIELDS = _JSON_FIELDS | _SCALAR_FIELDS
 

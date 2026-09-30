@@ -12,6 +12,24 @@ def test_create_and_get_active(logged_in_client):
     assert active["salary_min"] == 15000
 
 
+def test_remote_work_country_and_employer_markets_are_stored_separately(logged_in_client):
+    response = logged_in_client.post("/api/candidate-preferences", json={"fields": {
+        "work_mode": ["remote"],
+        "work_country": "Poland",
+        "employer_countries": ["United States", "United Kingdom"],
+        "seniority_levels": ["senior"],
+        "required_seniority_levels": [],
+        "preferred_company_types": ["product"],
+        "required_company_types": [],
+    }})
+    assert response.status_code == 200
+    active = logged_in_client.get("/api/candidate-preferences/active").json()
+    assert active["work_country"] == "Poland"
+    assert active["employer_countries"] == ["United States", "United Kingdom"]
+    assert active["required_seniority_levels"] == []
+    assert active["required_company_types"] == []
+
+
 def test_invalid_field_rejected(logged_in_client):
     resp = logged_in_client.post("/api/candidate-preferences", json={"fields": {"not_a_real_field": 1}})
     assert resp.status_code == 400
@@ -90,6 +108,16 @@ def test_save_syncs_location_criteria_from_work_mode(logged_in_client):
     assert set(locations) == {"Poland", "Germany", "Warsaw"}
 
 
+def test_work_country_drives_remote_search_location_criterion(logged_in_client):
+    logged_in_client.post("/api/candidate-preferences", json={"fields": {
+        "work_mode": ["remote"],
+        "work_country": "Poland",
+        "employer_countries": ["United States"],
+    }})
+    locations = logged_in_client.get("/api/criteria/active").json()["locations"]
+    assert locations == ["Poland"]
+
+
 def test_save_syncs_rejected_and_preferred_criteria_from_tech(logged_in_client):
     logged_in_client.post("/api/candidate-preferences", json={"fields": {
         "avoided_tech": ["PHP"], "extra_tech": ["Kubernetes"],
@@ -106,11 +134,41 @@ def test_save_replaces_rather_than_accumulates_synced_criteria(logged_in_client)
     assert rejected == ["jQuery"]
 
 
-def test_save_never_touches_title_or_search_query_criteria(logged_in_client):
-    # Those are Claude-derived in JobAgent's own equivalent flow; this service
-    # has no Anthropic integration to redo that with, so a save from here
-    # must leave whatever titles/search_queries already exist untouched.
-    logged_in_client.post("/api/criteria", json={"type": "title", "value": "Backend Engineer"})
-    logged_in_client.post("/api/candidate-preferences", json={"fields": {"work_mode": ["remote"]}})
+def test_update_active_preferences_resynchronizes_criteria(logged_in_client):
+    pref_id = logged_in_client.post("/api/candidate-preferences", json={"fields": {
+        "work_mode": ["remote"], "remote_countries": ["Poland"], "avoided_tech": ["PHP"],
+    }}).json()["id"]
+    response = logged_in_client.patch(f"/api/candidate-preferences/{pref_id}", json={"fields": {
+        "remote_countries": ["Germany"], "avoided_tech": ["Java"],
+    }})
+    assert response.status_code == 200
     active = logged_in_client.get("/api/criteria/active").json()
-    assert active["titles"] == ["Backend Engineer"]
+    assert active["locations"] == ["Germany"]
+    assert active["rejected"] == ["Java"]
+
+
+def test_activate_preferences_resynchronizes_criteria(logged_in_client):
+    first = logged_in_client.post("/api/candidate-preferences", json={"fields": {
+        "work_mode": ["remote"], "remote_countries": ["Poland"], "avoided_tech": ["PHP"],
+    }}).json()["id"]
+    logged_in_client.post("/api/candidate-preferences", json={"fields": {
+        "work_mode": ["remote"], "remote_countries": ["Germany"], "avoided_tech": ["Java"],
+    }})
+    response = logged_in_client.post(f"/api/candidate-preferences/{first}/activate")
+    assert response.status_code == 200
+    active = logged_in_client.get("/api/criteria/active").json()
+    assert active["locations"] == ["Poland"]
+    assert active["rejected"] == ["PHP"]
+
+
+def test_save_resynchronizes_title_and_search_query_criteria(logged_in_client):
+    logged_in_client.post("/api/criteria", json={"type": "title", "value": "Backend Engineer"})
+    logged_in_client.post("/api/criteria", json={"type": "search_query", "value": "Legacy query"})
+    logged_in_client.post("/api/candidate-preferences", json={"fields": {
+        "work_mode": ["remote"],
+        "extra_tech": ["Python", "Docker"],
+        "role_types": ["developer", "security"],
+    }})
+    active = logged_in_client.get("/api/criteria/active").json()
+    assert set(active["titles"]) == {"Python", "Software Engineer", "Security Engineer"}
+    assert active["search_queries"] == []

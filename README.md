@@ -2,6 +2,12 @@
 
 The multi-tenant backend for [JobAgent](https://github.com/BaranskiTomasz/JobAgent) — a FastAPI + Postgres service that owns all job-search data. Any number of users register their own account, browse and triage their own job pool from a small built-in dashboard, and connect their local JobAgent installation to this service as an authenticated API client. JobAgent itself has no database of its own; every read/write it makes is an HTTP call here.
 
+The companion collector currently supplies jobs from LinkedIn; international remote boards including Remotive, Remote OK, Working Nomads, We Work Remotely, Himalayas, Jobicy, JobsCollider, and Arbeitnow; direct company boards hosted by Greenhouse, Lever, and Ashby; Hacker News “Who is hiring?”; and the Poland-focused justjoin.it, theprotocol.it, it.pracuj.pl, NoFluffJobs, and SOLID.Jobs. JobAgentWeb stores each source identifier and exposes its display name in dashboard filters.
+
+Incoming postings are deduplicated across sources using canonical URLs, exact content fingerprints, and a conservative company/title plus description-similarity check. Every original source URL remains available as an alias of the canonical posting. Per-user AI scores and rankings carry input fingerprints so clients can detect and replace stale results.
+
+Search statistics retain a retrieval funnel (`upstream_found`, `query_matched`, `date_matched`, `geo_matched`, `cards_found`, `new_found`) in addition to per-query history. This makes source-side recall loss distinguishable from date, eligibility, and deduplication effects.
+
 ---
 
 ## Architecture

@@ -1,3 +1,8 @@
+import json
+
+from db import dict_cursor
+
+
 # Idempotent schema, safe to run on every startup.
 _SCHEMA = """
     CREATE TABLE IF NOT EXISTS users (
@@ -18,17 +23,35 @@ _SCHEMA = """
         source           TEXT DEFAULT 'linkedin',
         source_id        TEXT,
         search_query     TEXT,
+        canonical_url    TEXT,
+        identity_fingerprint TEXT,
+        content_fingerprint TEXT,
         structured_data  JSONB,
         created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE INDEX IF NOT EXISTS idx_job_postings_company ON job_postings(company);
+    CREATE TABLE IF NOT EXISTS job_posting_aliases (
+        id           INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        job_id       TEXT NOT NULL REFERENCES job_postings(id) ON DELETE CASCADE,
+        url          TEXT NOT NULL,
+        canonical_url TEXT NOT NULL,
+        source       TEXT,
+        source_id    TEXT,
+        metadata     JSONB,
+        created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(job_id, url, source)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_job_posting_aliases_job ON job_posting_aliases(job_id);
+    CREATE INDEX IF NOT EXISTS idx_job_posting_aliases_canonical ON job_posting_aliases(canonical_url);
 
     CREATE TABLE IF NOT EXISTS job_embeddings (
         job_id     TEXT PRIMARY KEY REFERENCES job_postings(id) ON DELETE CASCADE,
         embedding  TEXT,
         model      TEXT,
+        text_hash  TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -38,6 +61,7 @@ _SCHEMA = """
         job_id              TEXT NOT NULL REFERENCES job_postings(id) ON DELETE CASCADE,
         status              TEXT DEFAULT 'new',
         score               REAL,
+        score_fingerprint   TEXT,
         score_reason        TEXT,
         score_breakdown     JSONB,
         rejection_reason    TEXT,
@@ -47,6 +71,7 @@ _SCHEMA = """
         rank_reason         TEXT,
         debate_flag         TEXT,
         debate_note         TEXT,
+        ranking_fingerprint TEXT,
         would_apply         INTEGER,
         would_apply_reason  TEXT,
         created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -138,6 +163,10 @@ _SCHEMA = """
         location     TEXT NOT NULL,
         cards_found  INTEGER DEFAULT 0,
         new_found    INTEGER DEFAULT 0,
+        upstream_found INTEGER,
+        query_matched INTEGER,
+        date_matched INTEGER,
+        geo_matched INTEGER,
         searched_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -159,14 +188,18 @@ _SCHEMA = """
         user_id                  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         cv_profile_id            INTEGER REFERENCES cv_profiles(id),
         work_mode                TEXT,
+        work_country             TEXT,
+        employer_countries       TEXT,
         remote_countries         TEXT,
         hybrid_cities            TEXT,
         salary_min               INTEGER,
         salary_currency          TEXT,
         show_jobs_without_salary INTEGER DEFAULT 1,
         seniority_levels         TEXT,
+        required_seniority_levels TEXT,
         role_types               TEXT,
         preferred_company_types  TEXT,
+        required_company_types   TEXT,
         extra_tech               TEXT,
         avoided_tech             TEXT,
         languages                TEXT,
@@ -190,6 +223,16 @@ _SCHEMA = """
 """
 
 _NEW_COLUMNS = [
+    ("search_stats", "upstream_found", "INTEGER"),
+    ("search_stats", "query_matched", "INTEGER"),
+    ("search_stats", "date_matched", "INTEGER"),
+    ("search_stats", "geo_matched", "INTEGER"),
+    ("user_job_states", "score_fingerprint", "TEXT"),
+    ("user_job_states", "ranking_fingerprint", "TEXT"),
+    ("candidate_preferences", "work_country", "TEXT"),
+    ("candidate_preferences", "employer_countries", "TEXT"),
+    ("candidate_preferences", "required_seniority_levels", "TEXT"),
+    ("candidate_preferences", "required_company_types", "TEXT"),
     ("preference_profiles", "content_format", "TEXT DEFAULT 'text'"),
     ("preference_profiles", "dismissed_count", "INTEGER DEFAULT 0"),
     ("users", "session_epoch", "INTEGER DEFAULT 0"),
@@ -202,6 +245,10 @@ _NEW_COLUMNS = [
     # Structured fields a source's own API provides natively, layered on top of
     # structured_data's LLM extraction (source-native beats LLM guess).
     ("job_postings", "source_structured_data", "JSONB"),
+    ("job_postings", "canonical_url", "TEXT"),
+    ("job_postings", "identity_fingerprint", "TEXT"),
+    ("job_postings", "content_fingerprint", "TEXT"),
+    ("job_embeddings", "text_hash", "TEXT"),
 ]
 
 # Columns that started as TEXT holding json.dumps() output and are converted to
@@ -270,6 +317,50 @@ def init_db(conn) -> None:
         for table, column, type_sql in _NEW_COLUMNS:
             cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {type_sql}")
             conn.commit()
+
+        from jobs_repo import canonicalize_url, content_fingerprint, identity_fingerprint
+
+        backfill_cur = dict_cursor(conn)
+        backfill_cur.execute(
+            """SELECT id, title, company, location, url, description, source, source_id, search_query, source_structured_data
+               FROM job_postings
+               WHERE canonical_url IS NULL OR identity_fingerprint IS NULL OR content_fingerprint IS NULL"""
+        )
+        for row in backfill_cur.fetchall():
+            job = dict(row)
+            canonical = canonicalize_url(job["url"])
+            identity = identity_fingerprint(job)
+            content = content_fingerprint(job)
+            cur.execute(
+                "SELECT id FROM job_postings WHERE id != %s AND canonical_url = %s LIMIT 1",
+                (job["id"], canonical),
+            )
+            safe_canonical = None if cur.fetchone() else canonical
+            cur.execute(
+                """UPDATE job_postings SET canonical_url = COALESCE(canonical_url, %s),
+                       identity_fingerprint = COALESCE(identity_fingerprint, %s),
+                       content_fingerprint = COALESCE(content_fingerprint, %s)
+                   WHERE id = %s""",
+                (safe_canonical, identity, content, job["id"]),
+            )
+            cur.execute(
+                """INSERT INTO job_posting_aliases (job_id, url, canonical_url, source, source_id, metadata)
+                   VALUES (%s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (job_id, url, source) DO NOTHING""",
+                (
+                    job["id"], job["url"], canonical, job.get("source"), job.get("source_id"),
+                    json.dumps({"search_query": job.get("search_query"), "source_structured_data": job.get("source_structured_data")}, default=str),
+                ),
+            )
+        conn.commit()
+
+        cur.execute("ALTER TABLE job_posting_aliases DROP CONSTRAINT IF EXISTS job_posting_aliases_url_key")
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_job_posting_aliases_identity ON job_posting_aliases(job_id, url, source)")
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_job_postings_canonical_url ON job_postings(canonical_url) WHERE canonical_url IS NOT NULL")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_job_postings_identity_fingerprint ON job_postings(identity_fingerprint) WHERE identity_fingerprint IS NOT NULL")
+        cur.execute("DROP INDEX IF EXISTS idx_job_postings_content_fingerprint")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_job_postings_content_fingerprint_lookup ON job_postings(content_fingerprint) WHERE content_fingerprint IS NOT NULL")
+        conn.commit()
 
         for table, column in _DROPPED_COLUMNS:
             cur.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS {column}")
