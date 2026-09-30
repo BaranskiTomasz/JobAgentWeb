@@ -17,20 +17,42 @@ _ROLE_QUERIES = {
     "team_lead": "Engineering Manager",
     "security": "Security Engineer",
 }
-_GENERIC_TECH = {"docker", "git", "ci/cd", "postgresql", "redis", "sql"}
+_TECH_QUERIES = {
+    "php": "PHP Developer",
+    "python": "Python Developer",
+    "javascript": "JavaScript Developer",
+    "typescript": "TypeScript Developer",
+    "java": "Java Developer",
+    "c#": ".NET Developer",
+    ".net": ".NET Developer",
+    "go": "Go Developer",
+    "golang": "Go Developer",
+    "ruby": "Ruby Developer",
+    "symfony": "Symfony Developer",
+    "laravel": "Laravel Developer",
+    "django": "Django Developer",
+    "fastapi": "FastAPI Developer",
+    "flask": "Flask Developer",
+    "react": "React Developer",
+    "vue": "Vue Developer",
+    "angular": "Angular Developer",
+    "node.js": "Node.js Developer",
+    "nodejs": "Node.js Developer",
+}
 
 
 def _search_queries(fields: dict) -> list[str]:
     queries = []
     for tech in fields.get("extra_tech") or []:
         value = tech.strip()
-        if value and value.lower() not in _GENERIC_TECH:
-            queries.append(value)
+        query = _TECH_QUERIES.get(value.lower())
+        if query:
+            queries.append(query)
     for role in fields.get("role_types") or []:
         value = _ROLE_QUERIES.get(role, role.strip())
         if value:
             queries.append(value)
-    return list(dict.fromkeys(queries))[:10]
+    return list(dict.fromkeys(queries))[:6]
 
 
 def _sync_criteria_from_preferences(conn, user_id: int, fields: dict) -> None:

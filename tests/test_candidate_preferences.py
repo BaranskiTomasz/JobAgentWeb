@@ -170,5 +170,14 @@ def test_save_resynchronizes_title_and_search_query_criteria(logged_in_client):
         "role_types": ["developer", "security"],
     }})
     active = logged_in_client.get("/api/criteria/active").json()
-    assert set(active["titles"]) == {"Python", "Software Engineer", "Security Engineer"}
+    assert set(active["titles"]) == {"Python Developer", "Software Engineer", "Security Engineer"}
     assert active["search_queries"] == []
+
+
+def test_search_queries_skip_tools_that_are_not_job_roles(logged_in_client):
+    logged_in_client.post("/api/candidate-preferences", json={"fields": {
+        "extra_tech": ["PHP", "Symfony", "Doctrine", "MySQL", "RabbitMQ", "Claude Code"],
+        "role_types": ["developer"],
+    }})
+    active = logged_in_client.get("/api/criteria/active").json()
+    assert set(active["titles"]) == {"PHP Developer", "Symfony Developer", "Software Engineer"}
