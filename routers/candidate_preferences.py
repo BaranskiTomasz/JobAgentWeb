@@ -50,6 +50,8 @@ def _search_queries(fields: dict) -> list[str]:
             queries.append(query)
     for role in fields.get("role_types") or []:
         value = _ROLE_QUERIES.get(role, role.strip())
+        if value == "Software Engineer" and queries:
+            continue
         if value:
             queries.append(value)
     return list(dict.fromkeys(queries))[:6]
