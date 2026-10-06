@@ -41,6 +41,16 @@ def test_classifier_maps_quality_assurance_roles_to_qa():
     assert result["is_public"] is True
 
 
+def test_classifier_does_not_map_engineering_role_from_incidental_qa_mention():
+    result = classify_catalog_job({
+        "title": "Senior Python Developer",
+        "description": "Work with QA teams and improve automated quality checks.",
+        "location": "Poland (Remote)",
+        "source_structured_data": {"remote": True, "remote_regions": ["Poland"]},
+    })
+    assert result["technologies"] == ["python"]
+
+
 def test_classifier_does_not_publish_us_only_job():
     result = classify_catalog_job({
         "title": "Python Developer",

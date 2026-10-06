@@ -15,6 +15,7 @@ TECHNOLOGY_PATTERNS = {
         r"\bquality assurance\b",
         r"\bsdet\b",
         r"\btest automation\b",
+        r"\b(?:software |automation )?test(?:er| engineer)\b",
         r"\bautomation tester\b",
         r"\bsoftware tester\b",
     ),
@@ -23,7 +24,7 @@ TECHNOLOGY_PATTERNS = {
 COUNTRY_NAMES = {"PL": ("poland", "polska"), "BG": ("bulgaria", "bułgaria", "bulgariya")}
 REGIONAL_MARKERS = ("worldwide", "anywhere", "global", "europe", "european", "emea", "eea", "eu-only", "eu only")
 REMOTE_MARKERS = ("remote", "zdaln", "work from home")
-CLASSIFIER_VERSION = 1
+CLASSIFIER_VERSION = 2
 
 
 def _json_dict(value) -> dict:
@@ -54,10 +55,15 @@ def classify_catalog_job(job: dict) -> dict:
     text = " ".join(str(value or "") for value in (
         job.get("title"), job.get("description"), *search_queries, *stacks,
     )).lower()
-    technologies = sorted(
+    technologies = [
         technology for technology, patterns in TECHNOLOGY_PATTERNS.items()
+        if technology != "qa"
         if any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
-    )
+    ]
+    qa_text = " ".join(str(value or "") for value in (job.get("title"), *stacks)).lower()
+    if any(re.search(pattern, qa_text, re.IGNORECASE) for pattern in TECHNOLOGY_PATTERNS["qa"]):
+        technologies.append("qa")
+    technologies.sort()
 
     location = str(job.get("location") or "").lower()
     regions = []
