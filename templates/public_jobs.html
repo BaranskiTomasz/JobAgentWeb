@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Remote {{ technology_label }} jobs — JobAgent</title>
+<meta name="description" content="Aktualne oferty pracy zdalnej w technologii {{ technology }} dostępne z Polski i Bułgarii.">
+<link rel="stylesheet" href="/static/catalog.css?v=1">
+</head>
+<body data-technology="{{ technology }}" data-authenticated="{{ 'true' if user else 'false' }}">
+<header class="catalog-header">
+  <a class="brand" href="/">JobAgent<span>.</span></a>
+  <nav>
+    <a href="/how-it-works">Jak to działa</a>
+    {% if user %}<a href="/">Mój ranking</a>{% else %}<a href="/login">Zaloguj się</a>{% endif %}
+  </nav>
+</header>
+
+<main>
+  <section class="catalog-hero">
+    <p class="eyebrow">Wspólny katalog ofert remote</p>
+    <h1>Oferty {{ technology_label }}</h1>
+    <p>Jedna lista z wielu źródeł. Tylko oferty umożliwiające pracę z wybranego kraju.</p>
+  </section>
+
+  <section class="catalog-controls" aria-label="Filtry ofert">
+    <div class="technology-tabs">
+      {% for slug, label in [('php','PHP'),('python','Python'),('nodejs','Node.js'),('react','React'),('angular','Angular'),('qa','QA')] %}
+      <a href="/jobs/{{ slug }}" class="{{ 'active' if technology == slug else '' }}">{{ label }} <span data-facet="{{ slug }}"></span></a>
+      {% endfor %}
+    </div>
+    <label>Kraj wykonywania pracy
+      <select id="country-filter">
+        <option value="PL">Polska</option>
+        <option value="BG">Bułgaria</option>
+      </select>
+    </label>
+  </section>
+
+  <section class="personalize-panel">
+    <div>
+      <strong>Chcesz zobaczyć najlepiej dopasowane oferty?</strong>
+      <p>Dodaj CV i preferencje, a JobAgent oceni tę samą pulę specjalnie dla Ciebie.</p>
+    </div>
+    {% if user %}
+    <button id="personalize-button" type="button">Dodaj do mojego agenta</button>
+    {% else %}
+    <a id="register-personalize" class="button" href="/register?next={{ ('/jobs/' ~ technology ~ '?country=PL')|urlencode }}">Załóż konto i personalizuj</a>
+    {% endif %}
+  </section>
+
+  <div id="catalog-status" role="status">Ładowanie ofert…</div>
+  <section id="job-list" class="job-list" aria-live="polite"></section>
+  <button id="load-more" class="load-more" type="button" hidden>Pokaż więcej</button>
+</main>
+
+<script src="/static/catalog.js?v=1"></script>
+</body>
+</html>

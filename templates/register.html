@@ -23,6 +23,7 @@
     {% endif %}
 
     <form method="post" action="/register">
+      <input type="hidden" name="next" value="{{ next }}">
       <div class="auth-field">
         <label for="username">Username</label>
         <input type="text" id="username" name="username" required autofocus autocomplete="username" minlength="3" value="{{ username }}">
@@ -44,7 +45,7 @@
       <button type="submit" class="btn-primary auth-submit">Register</button>
     </form>
 
-    <div class="auth-switch">Already have an account? <a href="/login">Log in</a></div>
+    <div class="auth-switch">Already have an account? <a href="/login?next={{ next|urlencode }}">Log in</a></div>
   </div>
 </div>
 

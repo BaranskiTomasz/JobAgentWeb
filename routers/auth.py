@@ -15,15 +15,19 @@ router = APIRouter(tags=["auth"])
 templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
 
 
+def _safe_next(value: str) -> str:
+    return value if value.startswith("/") and not value.startswith("//") else "/"
+
+
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     if request.session.get("user_id"):
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse(request, "login.html", {"error": None})
+    return templates.TemplateResponse(request, "login.html", {"error": None, "next": _safe_next(request.query_params.get("next", "/"))})
 
 
 @router.post("/login", response_class=HTMLResponse)
-def login_submit(request: Request, username: str = Form(...), password: str = Form(...), conn=Depends(get_db)):
+def login_submit(request: Request, username: str = Form(...), password: str = Form(...), next: str = Form("/"), conn=Depends(get_db)):
     username = username.strip()
     rate_limit.enforce(request, "login", key=username.lower())
     user = users_repo.get_by_username(conn, username)
@@ -32,18 +36,21 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     valid = verify_password(password, user["password_hash"] if user else DUMMY_PASSWORD_HASH)
     if not user or not valid:
         return templates.TemplateResponse(
-            request, "login.html", {"error": "Invalid username or password"}, status_code=400,
+            request, "login.html", {"error": "Invalid username or password", "next": _safe_next(next)}, status_code=400,
         )
     request.session["user_id"] = user["id"]
     request.session["session_epoch"] = user["session_epoch"]
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(_safe_next(next), status_code=303)
 
 
 @router.get("/register", response_class=HTMLResponse)
 def register_page(request: Request):
     if request.session.get("user_id"):
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse(request, "register.html", {"errors": [], "username": "", "invite_code": ""})
+    return templates.TemplateResponse(
+        request, "register.html",
+        {"errors": [], "username": "", "invite_code": "", "next": _safe_next(request.query_params.get("next", "/"))},
+    )
 
 
 @router.post("/register", response_class=HTMLResponse)
@@ -53,6 +60,7 @@ def register_submit(
     password: str = Form(...),
     password_confirm: str = Form(...),
     invite_code: str = Form(""),
+    next: str = Form("/"),
     conn=Depends(get_db),
 ):
     rate_limit.enforce(request, "register")
@@ -82,7 +90,7 @@ def register_submit(
         # doesn't force retyping everything; passwords are never echoed back.
         return templates.TemplateResponse(
             request, "register.html",
-            {"errors": errors, "username": username, "invite_code": invite_code},
+            {"errors": errors, "username": username, "invite_code": invite_code, "next": _safe_next(next)},
             status_code=400,
         )
 
@@ -95,12 +103,12 @@ def register_submit(
         conn.rollback()
         return templates.TemplateResponse(
             request, "register.html",
-            {"errors": ["That username is already taken."], "username": username, "invite_code": invite_code},
+            {"errors": ["That username is already taken."], "username": username, "invite_code": invite_code, "next": _safe_next(next)},
             status_code=400,
         )
     request.session["user_id"] = user_id
     request.session["session_epoch"] = 0  # matches the users.session_epoch column default
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(_safe_next(next), status_code=303)
 
 
 @router.post("/logout")

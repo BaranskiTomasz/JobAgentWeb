@@ -128,6 +128,21 @@ def test_login_unknown_username_rejected(client):
 def test_login_success_grants_access(client, user):
     resp = client.post("/login", data={"username": user["username"], "password": user["password"]})
     assert resp.status_code in (200, 303)
+
+
+def test_login_returns_to_safe_catalog_page(client, user):
+    resp = client.post("/login", data={
+        "username": user["username"], "password": user["password"], "next": "/jobs/python?country=PL",
+    }, follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/jobs/python?country=PL"
+
+
+def test_login_rejects_external_next_redirect(client, user):
+    resp = client.post("/login", data={
+        "username": user["username"], "password": user["password"], "next": "//evil.example",
+    }, follow_redirects=False)
+    assert resp.headers["location"] == "/"
     assert client.get("/api/jobs/stats").status_code == 200
 
 

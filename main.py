@@ -15,7 +15,7 @@ from db import _get_pool, get_db
 from routers import (
     admin, auth, candidate_preferences, criteria, cv_profiles, dismissed_items,
     embeddings, evaluation, excluded_queries, jobs, preference_profiles,
-    search_stats, sessions, sources, usage,
+    public_jobs, search_stats, sessions, sources, usage,
 )
 
 _BASE_DIR = Path(__file__).parent
@@ -48,6 +48,7 @@ app.include_router(usage.router)
 app.include_router(embeddings.router)
 app.include_router(sources.router)
 app.include_router(evaluation.router)
+app.include_router(public_jobs.router)
 app.mount("/static", StaticFiles(directory=_BASE_DIR / "static"), name="static")
 
 templates = Jinja2Templates(directory=_BASE_DIR / "templates")
@@ -83,6 +84,21 @@ def how_it_works(request: Request, conn=Depends(get_db)):
     # Reachable logged-out: public_landing.html links here for more detail.
     user = _require_user(request, conn)
     return templates.TemplateResponse(request, "how_it_works.html", {"user": user})
+
+
+@app.get("/jobs", response_class=HTMLResponse)
+@app.get("/jobs/{technology}", response_class=HTMLResponse)
+def public_jobs_page(request: Request, technology: str = "python", conn=Depends(get_db)):
+    labels = {"php": "PHP", "python": "Python", "nodejs": "Node.js", "react": "React", "angular": "Angular", "qa": "QA"}
+    if technology not in labels:
+        return RedirectResponse("/jobs/python", status_code=303)
+    return templates.TemplateResponse(
+        request, "public_jobs.html", {
+            "user": _require_user(request, conn),
+            "technology": technology,
+            "technology_label": labels[technology],
+        },
+    )
 
 
 @app.get("/preferences", response_class=HTMLResponse)

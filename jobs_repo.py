@@ -221,6 +221,9 @@ def insert(conn, user_id: int, job: dict) -> dict:
     if cur.fetchone() is None:
         return {"job_id": None, "posting_created": False}
 
+    from catalog import refresh_job
+    refresh_job(conn, job_id)
+
     return {"job_id": job_id, "posting_created": posting_created}
 
 
@@ -397,6 +400,8 @@ def update_structured_data(conn, job_id: str, data: dict) -> None:
         " WHERE id = %s AND structured_data IS NULL",
         (json.dumps(data, ensure_ascii=False), job_id),
     )
+    from catalog import refresh_job
+    refresh_job(conn, job_id)
 
 
 def get_stats(conn, user_id: int) -> dict:
@@ -474,6 +479,8 @@ def update_description(conn, job_id: str, description: str) -> None:
         " WHERE id = %s AND (description IS NULL OR description = '')",
         (description, job_id),
     )
+    from catalog import refresh_job
+    refresh_job(conn, job_id)
 
 
 def update_score_and_status(conn, user_id: int, job_id: str, score: float | None, reason: str, status: str, breakdown: dict | None = None, fingerprint: str | None = None) -> None:

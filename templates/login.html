@@ -24,6 +24,7 @@
     {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
 
     <form method="post" action="/login">
+      <input type="hidden" name="next" value="{{ next }}">
       <div class="auth-field">
         <label for="username">Username</label>
         <input type="text" id="username" name="username" required autofocus autocomplete="username">
@@ -35,7 +36,7 @@
       <button type="submit" class="btn-primary auth-submit">Log in</button>
     </form>
 
-    <div class="auth-switch">No account yet? <a href="/register">Register</a></div>
+    <div class="auth-switch">No account yet? <a href="/register?next={{ next|urlencode }}">Register</a></div>
   </div>
 </div>
 

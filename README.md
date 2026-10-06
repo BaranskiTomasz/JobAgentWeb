@@ -4,6 +4,8 @@ The multi-tenant backend for [JobAgent](https://github.com/BaranskiTomasz/JobAge
 
 The companion collector currently supplies jobs from LinkedIn; international remote boards including Remotive, Remote OK, Working Nomads, We Work Remotely, Himalayas, Jobicy, JobsCollider, and Arbeitnow; direct company boards hosted by Greenhouse, Lever, and Ashby; Hacker News “Who is hiring?”; and the Poland-focused justjoin.it, theprotocol.it, it.pracuj.pl, NoFluffJobs, and SOLID.Jobs. JobAgentWeb stores each source identifier and exposes its display name in dashboard filters.
 
+Visitors can browse the shared catalog without an account at `/jobs/{technology}` for PHP, Python, Node.js, React, Angular, and QA. The country selector exposes only remote postings with evidence that work is possible from Poland or Bulgaria. Public responses contain posting facts and source links, never user scores, ranking, CV data, preferences, or application state. A logged-in visitor can attach the current technology/country catalog slice to their account without recollecting it; this creates `user_job_states` for the existing shared `job_postings`.
+
 Incoming postings are deduplicated across sources using canonical URLs, exact content fingerprints, and a conservative company/title plus description-similarity check. Every original source URL remains available as an alias of the canonical posting. Per-user AI scores and rankings carry input fingerprints so clients can detect and replace stale results.
 
 Search statistics retain a retrieval funnel (`upstream_found`, `query_matched`, `date_matched`, `geo_matched`, `cards_found`, `new_found`) in addition to per-query history. This makes source-side recall loss distinguishable from date, eligibility, and deduplication effects.
@@ -97,6 +99,7 @@ All JSON endpoints live under `/api/*` and require a session cookie (`deps.get_c
 | `usage` | `/api/usage` | Token/cost logging and per-run summaries |
 | `embeddings` | `/api/embeddings` | Shared vector storage + retrieval |
 | `evaluation` | `/api/eval` | Precision@K, divergence cases, would-apply precision — JobAgent proxies this rather than recomputing it |
+| `public-jobs` | `/api/public/jobs` | Logged-out technology/country catalog and authenticated attachment to a user's personal pool |
 | `sources` | `/api/sources` | Distinct job sources for *this user's* pool, for the dashboard's source filter dropdown |
 
 Every per-user router scopes its queries by `user_id` from the session — there is no endpoint that returns another user's `user_job_states`-backed data. `job_postings`/`job_embeddings` reads are shared by design (any authenticated user can see the same posting), never keyed by ownership.
@@ -107,7 +110,7 @@ Every per-user router scopes its queries by `user_id` from the session — there
 
 The reference deployment runs on a single VPS: this app under `uvicorn` (systemd unit `jobagentweb.service`), Postgres locally, and Caddy in front for TLS. Two details matter beyond the basics:
 
-- **Caddy only reverse-proxies — it doesn't gate access itself.** There's no `basic_auth` in front of the site; this app's own per-user session login (plus invite-only registration) is the access control. Caddy adds `X-Robots-Tag: noindex` and a disallow-everything `robots.txt` to keep the instance out of search indexes, nothing more. JobAgent (the API client) still reaches this host over a private WireGuard tunnel rather than the public domain, but that's a network-topology choice, not a workaround for a proxy-level auth wall.
+- **Caddy only reverse-proxies — it doesn't gate access itself.** There's no `basic_auth` in front of the site; private dashboard/API routes use the app's own session login, while `/jobs/*` and read-only `/api/public/jobs*` are deliberately public. A deployment that should be indexed must remove the historical global `X-Robots-Tag: noindex` and disallow-everything `robots.txt`; keep private dashboard paths out of the sitemap. JobAgent (the API client) still reaches this host over a private WireGuard tunnel rather than the public domain, but that's a network-topology choice, not a workaround for a proxy-level auth wall.
 - **Firewall**: `jobagentweb.service` binds `0.0.0.0:8000` (Caddy needs it locally, JobAgent reaches it over the tunnel — `--host 127.0.0.1` would cut that off too), so the app itself has no network-layer access control beyond the OS firewall. `deploy/bootstrap.sh` (JobAgent repo) provisions `ufw` to allow `:8000` only on `lo` and `wg0`, denying it on the public interface — this is scripted, not a manual step to remember.
 
 Provisioning scripts (`bootstrap.sh`, `postgres_setup.sql`, `Caddyfile`, `jobagentweb.service`, `.env` example, WireGuard configs) live in the **JobAgent** repo's `deploy/` directory, not here — this app predates the split into its own repo, and deployment assets were never moved over. Follow that repo's `deploy/bootstrap.sh` for a fresh VPS setup; it clones this repo (`JobAgentWeb.git`) to `/opt/jobagentweb` and installs the matching systemd unit.

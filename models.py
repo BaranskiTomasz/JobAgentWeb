@@ -58,6 +58,27 @@ class JobCreateResult(BaseModel):
     posting_created: bool  # False means the posting was already known (from another user); skip re-fetching/re-extracting
 
 
+class PublicJobOut(BaseModel):
+    id: str
+    title: str
+    company: str | None
+    location: str | None
+    url: str
+    source: str | None
+    sources: list[str]
+    posted_at: datetime | None
+    created_at: datetime
+    technologies: list[str]
+    work_countries: list[str]
+    eligibility_confidence: str
+    excerpt: str | None
+
+
+class CatalogImport(BaseModel):
+    technology: Literal["php", "python", "nodejs", "react", "angular", "qa"]
+    country: Literal["PL", "BG"]
+
+
 class JobStatusUpdate(BaseModel):
     status: _JOB_STATUSES
     rejection_reason: str | None = None

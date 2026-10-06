@@ -47,6 +47,20 @@ _SCHEMA = """
     CREATE INDEX IF NOT EXISTS idx_job_posting_aliases_job ON job_posting_aliases(job_id);
     CREATE INDEX IF NOT EXISTS idx_job_posting_aliases_canonical ON job_posting_aliases(canonical_url);
 
+    CREATE TABLE IF NOT EXISTS job_catalog_metadata (
+        job_id                  TEXT PRIMARY KEY REFERENCES job_postings(id) ON DELETE CASCADE,
+        technologies            TEXT[] NOT NULL DEFAULT '{}',
+        work_countries          TEXT[] NOT NULL DEFAULT '{}',
+        eligibility_confidence  TEXT NOT NULL DEFAULT 'unknown',
+        is_public               BOOLEAN NOT NULL DEFAULT FALSE,
+        classifier_version      INTEGER NOT NULL DEFAULT 0,
+        updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_job_catalog_public ON job_catalog_metadata(is_public);
+    CREATE INDEX IF NOT EXISTS idx_job_catalog_technologies ON job_catalog_metadata USING GIN(technologies);
+    CREATE INDEX IF NOT EXISTS idx_job_catalog_countries ON job_catalog_metadata USING GIN(work_countries);
+
     CREATE TABLE IF NOT EXISTS job_embeddings (
         job_id     TEXT PRIMARY KEY REFERENCES job_postings(id) ON DELETE CASCADE,
         embedding  TEXT,
@@ -249,6 +263,7 @@ _NEW_COLUMNS = [
     ("job_postings", "identity_fingerprint", "TEXT"),
     ("job_postings", "content_fingerprint", "TEXT"),
     ("job_embeddings", "text_hash", "TEXT"),
+    ("job_catalog_metadata", "classifier_version", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 # Columns that started as TEXT holding json.dumps() output and are converted to
@@ -385,6 +400,10 @@ def init_db(conn) -> None:
             cur.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {name}")
             cur.execute(f"ALTER TABLE {table} ADD CONSTRAINT {name} {check_sql}")
             conn.commit()
+
+        from catalog import backfill
+        backfill(conn)
+        conn.commit()
     finally:
         # A failed step above leaves the transaction aborted; roll back before
         # the unlock so that failure doesn't also mask itself by making the
