@@ -141,6 +141,36 @@ def test_missing_facts_excludes_jobs_older_than_max_age(logged_in_client, db_con
     assert job_id in {job["id"] for job in extended_queue}
 
 
+def test_catalog_gate_facts_are_complete_for_catalog_but_pending_for_personal_pipeline(
+    logged_in_client, user, monkeypatch,
+):
+    job_id = _create(logged_in_client)["job_id"]
+    monkeypatch.setattr("deps.JOBAGENT_API_KEY", "facts-test-key")
+    monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", str(user["id"]))
+    headers = {"X-JobAgent-Api-Key": "facts-test-key"}
+    response = logged_in_client.put(f"/api/jobs/{job_id}/facts", headers=headers, json={
+        "schema_version": 4,
+        "model": "extract-test:catalog-gate",
+        "content_hash": "gate123",
+        "facts": {
+            "_extraction_tier": "catalog_gate",
+            "remote": True,
+            "hybrid": False,
+            "remote_regions": ["United States"],
+        },
+        "provenance": {},
+    })
+    assert response.status_code == 200
+
+    personal = logged_in_client.get("/api/jobs/missing-facts", params={"schema_version": 4})
+    catalog = logged_in_client.get(
+        "/api/jobs/catalog/missing-facts", headers=headers, params={"schema_version": 4},
+    )
+
+    assert job_id in {job["id"] for job in personal.json()}
+    assert job_id not in {job["id"] for job in catalog.json()}
+
+
 def test_browser_session_cannot_replace_shared_facts(logged_in_client):
     job_id = _create(logged_in_client)["job_id"]
     response = logged_in_client.put(f"/api/jobs/{job_id}/facts", json={

@@ -511,7 +511,8 @@ def get_missing_facts(
             LEFT JOIN job_fact_extractions jfe ON jfe.job_id = jp.id
             WHERE ujs.user_id = %s
               AND jp.description IS NOT NULL AND jp.description != ''
-              AND (jfe.job_id IS NULL OR jfe.schema_version < %s)
+              AND (jfe.job_id IS NULL OR jfe.schema_version < %s
+                   OR COALESCE(jfe.facts->>'_extraction_tier', 'full') = 'catalog_gate')
               AND COALESCE(jp.posted_at, jp.created_at) >= CURRENT_TIMESTAMP - (%s * INTERVAL '1 day')
             ORDER BY jp.created_at DESC
             LIMIT %s""",
