@@ -108,6 +108,7 @@ def test_versioned_facts_are_normalized_and_removed_from_missing_queue(logged_in
         "provenance": {"remote": {"source_type": "ai_explicit", "confidence": 0.75}},
     })
     assert response.status_code == 200
+    assert response.json() == {"ok": True, "job_id": job_id}
     assert logged_in_client.get("/api/jobs/missing-facts", params={"schema_version": 2}).json() == []
 
     cur = db_conn.cursor()

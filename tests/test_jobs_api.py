@@ -118,7 +118,32 @@ def test_tracking_url_variants_are_deduplicated(logged_in_client):
     assert len(aliases.json()) == 2
 
 
-def test_identical_cross_source_content_is_deduplicated_and_aliases_are_preserved(logged_in_client):
+def test_stable_source_requisition_id_is_auto_merged(logged_in_client):
+    token = uuid.uuid4().hex
+    first = _create(
+        logged_in_client,
+        url=f"https://boards.greenhouse.io/acme/jobs/{token}",
+        source="greenhouse",
+        source_id=f"acme:{token}",
+        description="Backend role in Python",
+    )
+    second = _create(
+        logged_in_client,
+        url=f"https://boards.greenhouse.io/acme/positions/{token}",
+        source="greenhouse",
+        source_id=f"acme:{token}",
+        description="Backend role in Python",
+    )
+
+    assert second["job_id"] is None
+    aliases = logged_in_client.get(f"/api/jobs/{first['job_id']}/aliases").json()
+    assert {item["url"] for item in aliases} == {
+        f"https://boards.greenhouse.io/acme/jobs/{token}",
+        f"https://boards.greenhouse.io/acme/positions/{token}",
+    }
+
+
+def test_identical_cross_source_content_is_not_merged_without_stable_identity(logged_in_client):
     token = uuid.uuid4().hex
     description = "Build reliable distributed backend services in Python and PostgreSQL. " * 4
     first = _create(
@@ -138,11 +163,9 @@ def test_identical_cross_source_content_is_deduplicated_and_aliases_are_preserve
         description=description,
     )
 
-    assert second["job_id"] is None
+    assert second["job_id"] is not None
     aliases = logged_in_client.get(f"/api/jobs/{first['job_id']}/aliases").json()
-    assert {(item["source"], item["source_id"]) for item in aliases} == {
-        ("greenhouse", "acme:123"), ("linkedin", "987"),
-    }
+    assert {(item["source"], item["source_id"]) for item in aliases} == {("greenhouse", "acme:123")}
 
 
 def test_same_source_distinct_requisitions_are_not_fuzzy_deduplicated(logged_in_client):

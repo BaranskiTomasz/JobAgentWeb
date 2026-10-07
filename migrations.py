@@ -298,6 +298,29 @@ _SCHEMA = """
 
     CREATE INDEX IF NOT EXISTS idx_dismissed_score_items_job ON dismissed_score_items(job_id);
     CREATE INDEX IF NOT EXISTS idx_dismissed_score_items_user_id ON dismissed_score_items(user_id, id DESC);
+
+    CREATE TABLE IF NOT EXISTS job_dedup_matches (
+        id              INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        job_id_low     TEXT NOT NULL,
+        job_id_high    TEXT NOT NULL,
+        match_method   TEXT NOT NULL,
+        confidence     REAL NOT NULL,
+        evidence       JSONB NOT NULL DEFAULT '{}',
+        status         TEXT NOT NULL DEFAULT 'candidate',
+        survivor_job_id TEXT,
+        created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        resolved_at    TIMESTAMP,
+        CHECK (job_id_low <> job_id_high),
+        CHECK (status IN ('candidate', 'rejected', 'auto_merged', 'merged')),
+        UNIQUE (job_id_low, job_id_high)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_job_dedup_matches_candidate
+        ON job_dedup_matches(status, confidence DESC, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_job_dedup_matches_job_low
+        ON job_dedup_matches(job_id_low);
+    CREATE INDEX IF NOT EXISTS idx_job_dedup_matches_job_high
+        ON job_dedup_matches(job_id_high);
 """
 
 _NEW_COLUMNS = [

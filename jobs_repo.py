@@ -7,6 +7,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from psycopg2.extras import execute_values
 
 from db import dict_cursor
+from source_identity import company_alias, identity_aliases, title_alias
 
 # Explicit aliases: both tables have an `id` column, and `jp.*, ujs.*` would let
 # one clobber the other. The JSONB columns are cast back to text on the way out
@@ -45,6 +46,8 @@ _TRACKING_PARAMS = {
     "fbclid", "gclid", "mc_cid", "mc_eid", "referrer",
     "trk", "trackingid",
 }
+
+_DEDUP_WINDOW_DAYS = 21
 
 
 def canonicalize_url(url: str) -> str:
@@ -97,8 +100,8 @@ def content_fingerprint(job: dict) -> str | None:
 
 
 def identity_fingerprint(job: dict) -> str | None:
-    title = _normalize_identity_text(job.get("title"))
-    company = _normalize_identity_text(job.get("company"))
+    title = title_alias(job.get("title"))
+    company = company_alias(job.get("company"))
     if not title or not company:
         return None
     return hashlib.sha256(f"{company}\n{title}".encode()).hexdigest()
@@ -125,6 +128,35 @@ def _locations_compatible(left: str | None, right: str | None) -> bool:
     if not left_scope or not right_scope:
         return not left_scope and not right_scope
     return bool(left_scope & right_scope)
+
+
+def refresh_fingerprints(conn, job_id: str) -> bool:
+    cur = dict_cursor(conn)
+    cur.execute(
+        """SELECT id, title, company, location, description
+           FROM job_postings WHERE id = %s""",
+        (job_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return False
+    job = dict(row)
+    cur.execute(
+        """UPDATE job_postings
+           SET identity_fingerprint = %s,
+               content_fingerprint = %s,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = %s""",
+        (identity_fingerprint(job), content_fingerprint(job), job_id),
+    )
+    return True
+
+
+def _run_late_dedup(conn, job_id: str) -> dict:
+    if not refresh_fingerprints(conn, job_id):
+        return {"survivor_job_id": job_id, "merges": [], "candidates": []}
+    from dedup_repo import deduplicate_job
+    return deduplicate_job(conn, job_id, window_days=_DEDUP_WINDOW_DAYS)
 
 
 def _row_to_job(row: dict) -> dict:
@@ -174,34 +206,10 @@ def insert(conn, user_id: int, job: dict) -> dict:
         if existing:
             job_id = existing["id"]
 
-    if posting_created and identity and job.get("description"):
-        cur.execute(
-            """SELECT id, description, location, source, source_id, content_fingerprint FROM job_postings
-               WHERE (identity_fingerprint = %s OR (%s IS NOT NULL AND content_fingerprint = %s)) AND id != %s
-                 AND source IS DISTINCT FROM %s
-                 AND created_at >= CURRENT_TIMESTAMP - INTERVAL '45 days'
-               ORDER BY created_at DESC LIMIT 20""",
-            (identity, fingerprint, fingerprint, job_id, job.get("source")),
-        )
-        duplicate = next(
-            (
-                row for row in cur.fetchall()
-                if _locations_compatible(row["location"], job.get("location"))
-                and (
-                    fingerprint is not None and row["content_fingerprint"] == fingerprint
-                    or _description_similarity(row["description"], job["description"]) >= 0.82
-                )
-            ),
-            None,
-        )
-        if duplicate:
-            cur.execute("DELETE FROM job_postings WHERE id = %s", (job_id,))
-            job_id = duplicate["id"]
-            posting_created = False
-
     alias_metadata = {
         "search_query": job.get("search_query"),
         "source_structured_data": job.get("source_structured_data"),
+        **identity_aliases(job),
     }
     cur.execute(
         """INSERT INTO job_posting_aliases (job_id, url, canonical_url, source, source_id, metadata)
@@ -209,7 +217,8 @@ def insert(conn, user_id: int, job: dict) -> dict:
            ON CONFLICT (job_id, url, source) DO UPDATE SET
                source = COALESCE(job_posting_aliases.source, EXCLUDED.source),
                source_id = COALESCE(job_posting_aliases.source_id, EXCLUDED.source_id),
-               metadata = COALESCE(job_posting_aliases.metadata, EXCLUDED.metadata)""",
+               metadata = COALESCE(job_posting_aliases.metadata, '{}'::jsonb)
+                          || jsonb_strip_nulls(COALESCE(EXCLUDED.metadata, '{}'::jsonb))""",
         (job_id, job["url"], canonical_url, job.get("source"), job.get("source_id"),
          json.dumps(alias_metadata, ensure_ascii=False)),
     )
@@ -218,8 +227,17 @@ def insert(conn, user_id: int, job: dict) -> dict:
         "INSERT INTO user_job_states (user_id, job_id) VALUES (%s, %s) ON CONFLICT (user_id, job_id) DO NOTHING RETURNING id",
         (user_id, job_id),
     )
-    if cur.fetchone() is None:
+    state_created = cur.fetchone() is not None
+    if not state_created:
         return {"job_id": None, "posting_created": False}
+
+    if posting_created and job.get("description"):
+        dedup = _run_late_dedup(conn, job_id)
+        if dedup["survivor_job_id"] != job_id:
+            if any(user_id in merge["overlapping_user_ids"] for merge in dedup["merges"]):
+                return {"job_id": None, "posting_created": False}
+            job_id = dedup["survivor_job_id"]
+            posting_created = False
 
     from catalog import refresh_job
     refresh_job(conn, job_id)
@@ -492,7 +510,7 @@ def get_missing_facts(
 def update_facts(
     conn, job_id: str, schema_version: int, model: str, content_hash: str,
     facts: dict, provenance: dict,
-) -> None:
+) -> str:
     cur = conn.cursor()
     cur.execute(
         """INSERT INTO job_fact_extractions
@@ -589,11 +607,14 @@ def update_facts(
                    evidence = EXCLUDED.evidence""",
             list(eligibility.values()),
         )
+    dedup = _run_late_dedup(conn, job_id)
+    survivor_id = dedup["survivor_job_id"]
     from catalog import refresh_job
-    refresh_job(conn, job_id)
+    refresh_job(conn, survivor_id)
+    return survivor_id
 
 
-def update_description(conn, job_id: str, description: str) -> None:
+def update_description(conn, job_id: str, description: str) -> str:
     # Shared, not user-scoped, write-once - same reasoning as update_structured_data.
     cur = conn.cursor()
     cur.execute(
@@ -601,8 +622,13 @@ def update_description(conn, job_id: str, description: str) -> None:
         " WHERE id = %s AND (description IS NULL OR description = '')",
         (description, job_id),
     )
+    if cur.rowcount == 0:
+        return job_id
+    dedup = _run_late_dedup(conn, job_id)
+    survivor_id = dedup["survivor_job_id"]
     from catalog import refresh_job
-    refresh_job(conn, job_id)
+    refresh_job(conn, survivor_id)
+    return survivor_id
 
 
 def update_score_and_status(conn, user_id: int, job_id: str, score: float | None, reason: str, status: str, breakdown: dict | None = None, fingerprint: str | None = None) -> None:

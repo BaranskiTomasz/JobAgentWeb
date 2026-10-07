@@ -6,7 +6,7 @@ The companion collector currently supplies jobs from LinkedIn; international rem
 
 Visitors can browse the shared catalog without an account at `/jobs/{technology}` for PHP, Python, Node.js, React, Angular, and QA. The country selector exposes only remote postings with evidence that work is possible from Poland or Bulgaria. Public responses contain posting facts and source links, never user scores, ranking, CV data, preferences, or application state. A logged-in visitor can attach the current technology/country catalog slice to their account without recollecting it; this creates `user_job_states` for the existing shared `job_postings`.
 
-Incoming postings are deduplicated across sources using canonical URLs, exact content fingerprints, and a conservative company/title plus description-similarity check. Every original source URL remains available as an alias of the canonical posting. Per-user AI scores and rankings carry input fingerprints so clients can detect and replace stale results.
+Incoming postings are deduplicated across sources using canonical URLs, stable source requisition IDs, exact content fingerprints, and a conservative company/title plus description-similarity check. Matching runs again after descriptions and extracted facts arrive. High-confidence matches are merged transactionally, uncertain pairs remain reviewable candidates, and every decision is retained with its method, confidence, and evidence. Every original source URL remains available as an alias of the canonical posting. Per-user AI scores and rankings carry input fingerprints so clients can detect and replace stale results.
 
 Search statistics retain a retrieval funnel (`upstream_found`, `query_matched`, `date_matched`, `geo_matched`, `cards_found`, `new_found`) in addition to per-query history. This makes source-side recall loss distinguishable from date, eligibility, and deduplication effects.
 
@@ -18,7 +18,7 @@ Search statistics retain a retrieval funnel (`upstream_found`, `query_matched`, 
 
 The schema splits cleanly in two, defined in `migrations.py`:
 
-- **Shared** (`job_postings`, `job_embeddings`) — a posting's text, source metadata, and LLM-extracted tags are objective facts about the listing, independent of any candidate. Scraped and extracted once, reused by every user who finds the same URL (deduplicated on `url`).
+- **Shared** (`job_postings`, `job_embeddings`) — a posting's text, source metadata, and LLM-extracted tags are objective facts about the listing, independent of any candidate. Scraped and extracted once, reused by every user who finds the same posting. `job_posting_aliases` retains every source occurrence while `job_dedup_matches` records candidate and completed cross-source decisions.
 - **Per-user** (`user_job_states`, plus `criteria`, `cv_profiles`, `preference_profiles`, `candidate_preferences`, `usage_log`, `cost_summaries`, `search_stats`, `sessions`, `excluded_search_queries`, `dismissed_score_items`) — everything that's a judgment about *this* candidate: status, score, rank, would-apply flag, preferences, CV, cost history. Every one of these tables carries a `user_id` FK with `ON DELETE CASCADE`, so deleting a user's account cleanly removes everything of theirs without touching the shared pool.
 
 `user_job_states` joins to `job_postings` on `(user_id, job_id)` — one row per (user, posting) pair. This is why "delete jobs" (`jobs_repo.delete_by_filter`) only ever removes `user_job_states` rows: it's removing the posting from *your* view, never the shared posting other users may still have.

@@ -216,8 +216,8 @@ def update_score_and_status(job_id: str, body: JobScoreAndStatusUpdate, user: di
 @router.patch("/{job_id}/description", response_model=JobOut)
 def update_description(job_id: str, body: JobDescriptionUpdate, user: dict = Depends(get_current_user), conn=Depends(get_db)):
     _get_or_404(conn, user["id"], job_id)
-    jobs_repo.update_description(conn, job_id, body.description)
-    return jobs_repo.get_by_id(conn, user["id"], job_id)
+    survivor_id = jobs_repo.update_description(conn, job_id, body.description)
+    return jobs_repo.get_by_id(conn, user["id"], survivor_id)
 
 
 @router.patch("/{job_id}/ranking", response_model=JobOut)
@@ -250,10 +250,10 @@ def update_facts(
     job_id: str, body: JobFactsUpdate, user: dict = Depends(require_automation_client), conn=Depends(get_db),
 ):
     _get_or_404(conn, user["id"], job_id)
-    jobs_repo.update_facts(
+    survivor_id = jobs_repo.update_facts(
         conn, job_id, body.schema_version, body.model, body.content_hash, body.facts, body.provenance,
     )
-    return {"ok": True}
+    return {"ok": True, "job_id": survivor_id}
 
 
 @router.patch("/{job_id}/would-apply", response_model=JobOut)
