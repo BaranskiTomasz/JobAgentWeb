@@ -3,11 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 import dismissed_items_repo
 import jobs_repo
 from db import get_db
-from deps import get_current_user
+from deps import get_current_user, require_trusted_client
 from models import (
     DismissedItemCreate, JobCreate, JobCreateResult, JobDescriptionUpdate, JobOut,
     JobRankingBatchUpdate, JobRankingUpdate, JobScoreAndStatusUpdate, JobScoreUpdate,
-    JobStats, JobStatusUpdate, JobStructuredDataUpdate, JobWouldApplyBatchUpdate,
+    JobFactsUpdate, JobStats, JobStatusUpdate, JobStructuredDataUpdate, JobWouldApplyBatchUpdate,
     JobWouldApplyUpdate, WouldApplyStats,
 )
 
@@ -61,6 +61,16 @@ def missing_descriptions(user: dict = Depends(get_current_user), conn=Depends(ge
 @router.get("/missing-structured-data", response_model=list[JobOut])
 def missing_structured_data(user: dict = Depends(get_current_user), conn=Depends(get_db)):
     return jobs_repo.get_missing_structured_data(conn, user["id"])
+
+
+@router.get("/missing-facts", response_model=list[JobOut])
+def missing_facts(
+    schema_version: int,
+    limit: int = Query(200, ge=1, le=2000),
+    user: dict = Depends(get_current_user),
+    conn=Depends(get_db),
+):
+    return jobs_repo.get_missing_facts(conn, user["id"], schema_version, limit)
 
 
 @router.get("/new", response_model=list[JobOut])
@@ -232,6 +242,17 @@ def update_structured_data(
     _get_or_404(conn, user["id"], job_id)
     jobs_repo.update_structured_data(conn, job_id, body.data)
     return jobs_repo.get_by_id(conn, user["id"], job_id)
+
+
+@router.put("/{job_id}/facts")
+def update_facts(
+    job_id: str, body: JobFactsUpdate, user: dict = Depends(require_trusted_client), conn=Depends(get_db),
+):
+    _get_or_404(conn, user["id"], job_id)
+    jobs_repo.update_facts(
+        conn, job_id, body.schema_version, body.model, body.content_hash, body.facts, body.provenance,
+    )
+    return {"ok": True}
 
 
 @router.patch("/{job_id}/would-apply", response_model=JobOut)

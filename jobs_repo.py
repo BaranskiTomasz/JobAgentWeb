@@ -471,6 +471,125 @@ def get_missing_structured_data(conn, user_id: int) -> list[dict]:
     return [_row_to_job(r) for r in cur.fetchall()]
 
 
+def get_missing_facts(conn, user_id: int, schema_version: int, limit: int) -> list[dict]:
+    cur = dict_cursor(conn)
+    cur.execute(
+        f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
+            LEFT JOIN job_fact_extractions jfe ON jfe.job_id = jp.id
+            WHERE ujs.user_id = %s
+              AND jp.description IS NOT NULL AND jp.description != ''
+              AND (jfe.job_id IS NULL OR jfe.schema_version < %s)
+            ORDER BY jp.created_at DESC
+            LIMIT %s""",
+        (user_id, schema_version, limit),
+    )
+    return [_row_to_job(r) for r in cur.fetchall()]
+
+
+def update_facts(
+    conn, job_id: str, schema_version: int, model: str, content_hash: str,
+    facts: dict, provenance: dict,
+) -> None:
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO job_fact_extractions
+               (job_id, schema_version, model, content_hash, facts, provenance,
+                role_family, seniority_min, seniority_max, remote, timezone_requirement,
+                working_language, company_type, product_vs_outsourcing, extracted_at)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+           ON CONFLICT (job_id) DO UPDATE SET
+               schema_version = EXCLUDED.schema_version,
+               model = EXCLUDED.model,
+               content_hash = EXCLUDED.content_hash,
+               facts = EXCLUDED.facts,
+               provenance = EXCLUDED.provenance,
+               role_family = EXCLUDED.role_family,
+               seniority_min = EXCLUDED.seniority_min,
+               seniority_max = EXCLUDED.seniority_max,
+               remote = EXCLUDED.remote,
+               timezone_requirement = EXCLUDED.timezone_requirement,
+               working_language = EXCLUDED.working_language,
+               company_type = EXCLUDED.company_type,
+               product_vs_outsourcing = EXCLUDED.product_vs_outsourcing,
+               extracted_at = CURRENT_TIMESTAMP""",
+        (job_id, schema_version, model, content_hash,
+         json.dumps(facts, ensure_ascii=False), json.dumps(provenance, ensure_ascii=False),
+         facts.get("role_family"), facts.get("seniority_min"), facts.get("seniority_max"),
+         facts.get("remote"), facts.get("timezone_requirement"), facts.get("working_language"),
+         facts.get("company_type"), facts.get("product_vs_outsourcing")),
+    )
+    cur.execute(
+        "UPDATE job_postings SET structured_data = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+        (json.dumps(facts, ensure_ascii=False), job_id),
+    )
+    cur.execute("DELETE FROM job_skills WHERE job_id = %s", (job_id,))
+    skills = {}
+    for skill in facts.get("skills") or []:
+        if not isinstance(skill, dict):
+            continue
+        name = str(skill.get("canonical_name") or "").strip().lower()
+        if not name:
+            continue
+        skills[(name, skill.get("requirement") or "mentioned")] = (
+            job_id, name, str(skill.get("original_name") or name),
+            skill.get("requirement") or "mentioned", skill.get("importance") or "supporting",
+            skill.get("min_years"), float(skill.get("confidence") or 0.5), skill.get("evidence"),
+        )
+    if skills:
+        execute_values(
+            cur,
+            """INSERT INTO job_skills
+                   (job_id, canonical_name, original_name, requirement, importance, min_years, confidence, evidence)
+               VALUES %s
+               ON CONFLICT (job_id, canonical_name, requirement) DO UPDATE SET
+                   original_name = EXCLUDED.original_name,
+                   importance = EXCLUDED.importance,
+                   min_years = EXCLUDED.min_years,
+                   confidence = EXCLUDED.confidence,
+                   evidence = EXCLUDED.evidence""",
+            list(skills.values()),
+        )
+    cur.execute("DELETE FROM job_compensation_bands WHERE job_id = %s", (job_id,))
+    bands = [(
+        job_id, band.get("amount_min"), band.get("amount_max"), band.get("currency"),
+        band.get("period"), band.get("tax_basis"), band.get("compensation_type"),
+        band.get("contract_type"), band.get("country_code"),
+        float(band.get("confidence") or 0.5), band.get("evidence"),
+    ) for band in facts.get("compensation_bands") or [] if isinstance(band, dict)]
+    if bands:
+        execute_values(
+            cur,
+            """INSERT INTO job_compensation_bands
+                   (job_id, amount_min, amount_max, currency, period, tax_basis, compensation_type,
+                    contract_type, country_code, confidence, evidence) VALUES %s""",
+            bands,
+        )
+    cur.execute("DELETE FROM job_eligibility WHERE job_id = %s", (job_id,))
+    eligibility = {}
+    for item in facts.get("country_eligibility") or []:
+        if not isinstance(item, dict) or not item.get("country_code"):
+            continue
+        country_code = str(item["country_code"]).upper()
+        eligibility[country_code] = (
+            job_id, country_code, item.get("eligible"), float(item.get("confidence") or 0.5),
+            item.get("engagement_modes") or [], item.get("evidence"),
+        )
+    if eligibility:
+        execute_values(
+            cur,
+            """INSERT INTO job_eligibility
+                   (job_id, country_code, eligible, confidence, engagement_modes, evidence) VALUES %s
+               ON CONFLICT (job_id, country_code) DO UPDATE SET
+                   eligible = EXCLUDED.eligible,
+                   confidence = EXCLUDED.confidence,
+                   engagement_modes = EXCLUDED.engagement_modes,
+                   evidence = EXCLUDED.evidence""",
+            list(eligibility.values()),
+        )
+    from catalog import refresh_job
+    refresh_job(conn, job_id)
+
+
 def update_description(conn, job_id: str, description: str) -> None:
     # Shared, not user-scoped, write-once - same reasoning as update_structured_data.
     cur = conn.cursor()

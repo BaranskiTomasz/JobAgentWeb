@@ -42,3 +42,9 @@ def require_admin(request: Request, user: dict = Depends(get_current_user)) -> d
     if not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Admin only")
     return user
+
+
+def require_trusted_client(request: Request, user: dict = Depends(get_current_user)) -> dict:
+    if not getattr(request.state, "trusted_client", False):
+        raise HTTPException(status_code=403, detail="Automation client only")
+    return user

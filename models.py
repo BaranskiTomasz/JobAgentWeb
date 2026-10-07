@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 _JOB_STATUSES = Literal["new", "reviewed", "applied", "rejected", "auto_rejected"]
 
@@ -111,6 +111,14 @@ class JobRankingBatchUpdate(BaseModel):
 
 class JobStructuredDataUpdate(BaseModel):
     data: dict
+
+
+class JobFactsUpdate(BaseModel):
+    schema_version: int = Field(ge=1)
+    model: str = Field(min_length=1, max_length=200)
+    content_hash: str = Field(min_length=1, max_length=128)
+    facts: dict
+    provenance: dict = Field(default_factory=dict)
 
 
 class JobDescriptionUpdate(BaseModel):

@@ -61,6 +61,70 @@ _SCHEMA = """
     CREATE INDEX IF NOT EXISTS idx_job_catalog_technologies ON job_catalog_metadata USING GIN(technologies);
     CREATE INDEX IF NOT EXISTS idx_job_catalog_countries ON job_catalog_metadata USING GIN(work_countries);
 
+    CREATE TABLE IF NOT EXISTS job_fact_extractions (
+        job_id          TEXT PRIMARY KEY REFERENCES job_postings(id) ON DELETE CASCADE,
+        schema_version  INTEGER NOT NULL,
+        model           TEXT NOT NULL,
+        content_hash    TEXT NOT NULL,
+        facts           JSONB NOT NULL,
+        provenance      JSONB NOT NULL DEFAULT '{}',
+        role_family     TEXT,
+        seniority_min   TEXT,
+        seniority_max   TEXT,
+        remote          BOOLEAN,
+        timezone_requirement TEXT,
+        working_language TEXT,
+        company_type    TEXT,
+        product_vs_outsourcing TEXT,
+        extracted_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_job_fact_extractions_version ON job_fact_extractions(schema_version);
+    CREATE INDEX IF NOT EXISTS idx_job_fact_extractions_facts ON job_fact_extractions USING GIN(facts);
+
+    CREATE TABLE IF NOT EXISTS job_skills (
+        job_id          TEXT NOT NULL REFERENCES job_postings(id) ON DELETE CASCADE,
+        canonical_name  TEXT NOT NULL,
+        original_name   TEXT NOT NULL,
+        requirement     TEXT NOT NULL,
+        importance      TEXT NOT NULL,
+        min_years       REAL,
+        confidence      REAL NOT NULL,
+        evidence        TEXT,
+        PRIMARY KEY (job_id, canonical_name, requirement)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_job_skills_filter ON job_skills(canonical_name, requirement, importance);
+
+    CREATE TABLE IF NOT EXISTS job_compensation_bands (
+        id              INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        job_id          TEXT NOT NULL REFERENCES job_postings(id) ON DELETE CASCADE,
+        amount_min      NUMERIC,
+        amount_max      NUMERIC,
+        currency        TEXT,
+        period          TEXT,
+        tax_basis       TEXT,
+        compensation_type TEXT,
+        contract_type   TEXT,
+        country_code    TEXT,
+        confidence      REAL NOT NULL,
+        evidence        TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_job_compensation_filter ON job_compensation_bands(currency, period, contract_type);
+
+    CREATE TABLE IF NOT EXISTS job_eligibility (
+        job_id          TEXT NOT NULL REFERENCES job_postings(id) ON DELETE CASCADE,
+        country_code    TEXT NOT NULL,
+        eligible        BOOLEAN,
+        confidence      REAL NOT NULL,
+        engagement_modes TEXT[] NOT NULL DEFAULT '{}',
+        evidence        TEXT,
+        PRIMARY KEY (job_id, country_code)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_job_eligibility_filter ON job_eligibility(country_code, eligible, confidence);
+
     CREATE TABLE IF NOT EXISTS job_embeddings (
         job_id     TEXT PRIMARY KEY REFERENCES job_postings(id) ON DELETE CASCADE,
         embedding  TEXT,
@@ -261,9 +325,16 @@ _NEW_COLUMNS = [
     ("job_postings", "source_structured_data", "JSONB"),
     ("job_postings", "canonical_url", "TEXT"),
     ("job_postings", "identity_fingerprint", "TEXT"),
-    ("job_postings", "content_fingerprint", "TEXT"),
     ("job_embeddings", "text_hash", "TEXT"),
     ("job_catalog_metadata", "classifier_version", "INTEGER NOT NULL DEFAULT 0"),
+    ("job_fact_extractions", "role_family", "TEXT"),
+    ("job_fact_extractions", "seniority_min", "TEXT"),
+    ("job_fact_extractions", "seniority_max", "TEXT"),
+    ("job_fact_extractions", "remote", "BOOLEAN"),
+    ("job_fact_extractions", "timezone_requirement", "TEXT"),
+    ("job_fact_extractions", "working_language", "TEXT"),
+    ("job_fact_extractions", "company_type", "TEXT"),
+    ("job_fact_extractions", "product_vs_outsourcing", "TEXT"),
 ]
 
 # Columns that started as TEXT holding json.dumps() output and are converted to
@@ -332,6 +403,16 @@ def init_db(conn) -> None:
         for table, column, type_sql in _NEW_COLUMNS:
             cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {type_sql}")
             conn.commit()
+
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_job_fact_role "
+            "ON job_fact_extractions(role_family, seniority_min, seniority_max)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_job_fact_work "
+            "ON job_fact_extractions(remote, working_language, company_type)"
+        )
+        conn.commit()
 
         from jobs_repo import canonicalize_url, content_fingerprint, identity_fingerprint
 

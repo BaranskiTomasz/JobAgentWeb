@@ -77,6 +77,22 @@ def test_classifier_uses_cross_source_alias_eligibility():
     assert result["is_public"] is True
 
 
+def test_classifier_uses_explicit_v2_country_eligibility():
+    result = classify_catalog_job({
+        "title": "QA Engineer",
+        "description": "Build automated browser tests.",
+        "location": "Remote",
+        "structured_data": {
+            "remote": True,
+            "skills": [{"canonical_name": "playwright", "original_name": "Playwright"}],
+            "country_eligibility": [{"country_code": "PL", "eligible": True}],
+        },
+    })
+    assert result["technologies"] == ["qa"]
+    assert result["work_countries"] == ["PL"]
+    assert result["is_public"] is True
+
+
 def test_public_catalog_is_available_without_account(client, logged_in_client):
     job_id = _create_catalog_job(logged_in_client)
     response = client.get("/api/public/jobs", params={"technology": "python", "country": "PL"})

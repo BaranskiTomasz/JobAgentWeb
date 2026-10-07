@@ -77,6 +77,56 @@ def test_update_structured_data_is_write_once(logged_in_client, other_logged_in_
     assert '"remote": true' in mine["structured_data"]
 
 
+def test_versioned_facts_are_normalized_and_removed_from_missing_queue(logged_in_client, db_conn, user, monkeypatch):
+    job_id = _create(logged_in_client)["job_id"]
+    before = logged_in_client.get("/api/jobs/missing-facts", params={"schema_version": 2}).json()
+    assert [job["id"] for job in before] == [job_id]
+
+    monkeypatch.setattr("deps.JOBAGENT_API_KEY", "facts-test-key")
+    monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", str(user["id"]))
+    response = logged_in_client.put(f"/api/jobs/{job_id}/facts", headers={"X-JobAgent-Api-Key": "facts-test-key"}, json={
+        "schema_version": 2,
+        "model": "extract-test",
+        "content_hash": "abc123",
+        "facts": {
+            "remote": True,
+            "skills": [{
+                "canonical_name": "python", "original_name": "Python",
+                "requirement": "required", "importance": "core", "min_years": 3,
+                "confidence": 0.9, "evidence": "3+ years of Python",
+            }],
+            "compensation_bands": [{
+                "amount_min": 100, "amount_max": 140, "currency": "PLN", "period": "hourly",
+                "tax_basis": "net", "compensation_type": "base", "contract_type": "b2b",
+                "country_code": "PL", "confidence": 0.95, "evidence": "100-140 PLN/h",
+            }],
+            "country_eligibility": [{
+                "country_code": "PL", "eligible": True, "engagement_modes": ["b2b"],
+                "confidence": 0.9, "evidence": "Remote from Poland",
+            }],
+        },
+        "provenance": {"remote": {"source_type": "ai_explicit", "confidence": 0.75}},
+    })
+    assert response.status_code == 200
+    assert logged_in_client.get("/api/jobs/missing-facts", params={"schema_version": 2}).json() == []
+
+    cur = db_conn.cursor()
+    cur.execute("SELECT canonical_name, requirement, importance FROM job_skills WHERE job_id = %s", (job_id,))
+    assert cur.fetchone() == ("python", "required", "core")
+    cur.execute("SELECT amount_min, amount_max, currency, period FROM job_compensation_bands WHERE job_id = %s", (job_id,))
+    assert tuple(map(str, cur.fetchone()[:2])) == ("100", "140")
+    cur.execute("SELECT country_code, eligible, engagement_modes FROM job_eligibility WHERE job_id = %s", (job_id,))
+    assert cur.fetchone() == ("PL", True, ["b2b"])
+
+
+def test_browser_session_cannot_replace_shared_facts(logged_in_client):
+    job_id = _create(logged_in_client)["job_id"]
+    response = logged_in_client.put(f"/api/jobs/{job_id}/facts", json={
+        "schema_version": 2, "model": "x", "content_hash": "x", "facts": {},
+    })
+    assert response.status_code == 403
+
+
 def test_update_score_and_status(logged_in_client):
     job_id = _create(logged_in_client)["job_id"]
     resp = logged_in_client.patch(f"/api/jobs/{job_id}/score-and-status", json={

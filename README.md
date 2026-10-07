@@ -23,6 +23,8 @@ The schema splits cleanly in two, defined in `migrations.py`:
 
 `user_job_states` joins to `job_postings` on `(user_id, job_id)` — one row per (user, posting) pair. This is why "delete jobs" (`jobs_repo.delete_by_filter`) only ever removes `user_job_states` rows: it's removing the posting from *your* view, never the shared posting other users may still have.
 
+Versioned extraction metadata lives in `job_fact_extractions`: schema/model version, source-description hash, canonical facts, provenance, evidence, and indexed role/work fields. Repeated dimensions are normalized into `job_skills`, `job_compensation_bands`, and `job_eligibility`, while `job_postings.structured_data` remains a compatibility projection for existing evaluators. `PUT /api/jobs/{job_id}/facts` replaces all projections atomically, and `GET /api/jobs/missing-facts?schema_version=N` drives safe re-extraction after a schema change.
+
 ### Auth
 
 Username/password, bcrypt-hashed (`security.py`), backed by Starlette's signed-cookie `SessionMiddleware` — no JWT, no OAuth, no separate session table. `deps.get_current_user` resolves the session cookie to a `users` row on every request; `deps.require_admin` additionally gates on `is_admin`. Registration requires a shared invite code (`config.INVITE_CODE`, checked in `routers/auth.py`) — unset it and `/register` refuses everyone, deny-by-default. See [Deployment](#deployment) for how the current reference deployment also restricts network-level access on top of that.

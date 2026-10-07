@@ -52,6 +52,9 @@ def classify_catalog_job(job: dict) -> dict:
     for key in ("stack", "stack_required", "stack_preferred"):
         value = structured.get(key) or source_data.get(key) or []
         stacks.extend(value if isinstance(value, list) else [value])
+    for skill in structured.get("skills") or []:
+        if isinstance(skill, dict):
+            stacks.extend([skill.get("canonical_name"), skill.get("original_name")])
     text = " ".join(str(value or "") for value in (
         job.get("title"), job.get("description"), *search_queries, *stacks,
     )).lower()
@@ -95,6 +98,12 @@ def classify_catalog_job(job: dict) -> dict:
             code for code, names in COUNTRY_NAMES.items()
             if any(re.search(rf"(?:remote|work(?:ing)? from)[^.!?\n]{{0,50}}\b{re.escape(name)}\b", text, re.IGNORECASE) for name in names)
         ]
+    explicit_eligibility = {
+        str(item.get("country_code") or "").upper()
+        for item in structured.get("country_eligibility") or []
+        if isinstance(item, dict) and item.get("eligible") is True
+    }
+    countries = sorted(set(countries) | (explicit_eligibility & {"PL", "BG"}))
 
     confidence = "high" if any(variant.get("remote") is True for variant in source_variants) and countries else "medium" if countries else "unknown"
     return {
