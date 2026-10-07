@@ -471,7 +471,9 @@ def get_missing_structured_data(conn, user_id: int) -> list[dict]:
     return [_row_to_job(r) for r in cur.fetchall()]
 
 
-def get_missing_facts(conn, user_id: int, schema_version: int, limit: int) -> list[dict]:
+def get_missing_facts(
+    conn, user_id: int, schema_version: int, limit: int, max_age_days: int = 14,
+) -> list[dict]:
     cur = dict_cursor(conn)
     cur.execute(
         f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
@@ -479,9 +481,10 @@ def get_missing_facts(conn, user_id: int, schema_version: int, limit: int) -> li
             WHERE ujs.user_id = %s
               AND jp.description IS NOT NULL AND jp.description != ''
               AND (jfe.job_id IS NULL OR jfe.schema_version < %s)
+              AND COALESCE(jp.posted_at, jp.created_at) >= CURRENT_TIMESTAMP - (%s * INTERVAL '1 day')
             ORDER BY jp.created_at DESC
             LIMIT %s""",
-        (user_id, schema_version, limit),
+        (user_id, schema_version, max_age_days, limit),
     )
     return [_row_to_job(r) for r in cur.fetchall()]
 

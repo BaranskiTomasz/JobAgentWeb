@@ -67,10 +67,11 @@ def missing_structured_data(user: dict = Depends(get_current_user), conn=Depends
 def missing_facts(
     schema_version: int,
     limit: int = Query(200, ge=1, le=2000),
+    max_age_days: int = Query(14, ge=1, le=90),
     user: dict = Depends(get_current_user),
     conn=Depends(get_db),
 ):
-    return jobs_repo.get_missing_facts(conn, user["id"], schema_version, limit)
+    return jobs_repo.get_missing_facts(conn, user["id"], schema_version, limit, max_age_days)
 
 
 @router.get("/new", response_model=list[JobOut])

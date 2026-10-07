@@ -119,6 +119,27 @@ def test_versioned_facts_are_normalized_and_removed_from_missing_queue(logged_in
     assert cur.fetchone() == ("PL", True, ["b2b"])
 
 
+def test_missing_facts_excludes_jobs_older_than_max_age(logged_in_client, db_conn):
+    job_id = _create(logged_in_client)["job_id"]
+    cur = db_conn.cursor()
+    cur.execute(
+        "UPDATE job_postings SET posted_at = CURRENT_TIMESTAMP - INTERVAL '15 days' WHERE id = %s",
+        (job_id,),
+    )
+    db_conn.commit()
+
+    default_queue = logged_in_client.get(
+        "/api/jobs/missing-facts", params={"schema_version": 3},
+    ).json()
+    extended_queue = logged_in_client.get(
+        "/api/jobs/missing-facts",
+        params={"schema_version": 3, "max_age_days": 30},
+    ).json()
+
+    assert job_id not in {job["id"] for job in default_queue}
+    assert job_id in {job["id"] for job in extended_queue}
+
+
 def test_browser_session_cannot_replace_shared_facts(logged_in_client):
     job_id = _create(logged_in_client)["job_id"]
     response = logged_in_client.put(f"/api/jobs/{job_id}/facts", json={
