@@ -44,7 +44,9 @@ def require_admin(request: Request, user: dict = Depends(get_current_user)) -> d
     return user
 
 
-def require_trusted_client(request: Request, user: dict = Depends(get_current_user)) -> dict:
-    if not getattr(request.state, "trusted_client", False):
-        raise HTTPException(status_code=403, detail="Automation client only")
-    return user
+def require_automation_client(request: Request, user: dict = Depends(get_current_user)) -> dict:
+    if getattr(request.state, "trusted_client", False):
+        return user
+    if JOBAGENT_API_KEY_USER_ID and user["id"] == int(JOBAGENT_API_KEY_USER_ID):
+        return user
+    raise HTTPException(status_code=403, detail="Automation client only")

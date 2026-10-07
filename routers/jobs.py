@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 import dismissed_items_repo
 import jobs_repo
 from db import get_db
-from deps import get_current_user, require_trusted_client
+from deps import get_current_user, require_automation_client
 from models import (
     DismissedItemCreate, JobCreate, JobCreateResult, JobDescriptionUpdate, JobOut,
     JobRankingBatchUpdate, JobRankingUpdate, JobScoreAndStatusUpdate, JobScoreUpdate,
@@ -246,7 +246,7 @@ def update_structured_data(
 
 @router.put("/{job_id}/facts")
 def update_facts(
-    job_id: str, body: JobFactsUpdate, user: dict = Depends(require_trusted_client), conn=Depends(get_db),
+    job_id: str, body: JobFactsUpdate, user: dict = Depends(require_automation_client), conn=Depends(get_db),
 ):
     _get_or_404(conn, user["id"], job_id)
     jobs_repo.update_facts(
