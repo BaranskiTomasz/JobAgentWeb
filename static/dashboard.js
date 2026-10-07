@@ -447,12 +447,50 @@ function _renderBadges(j, s) {
     tags.push(`<span class="b${on('ctype=' + s.company_type)}" onclick="toggleBadgeFilter('${escJs('ctype=' + s.company_type)}')">${esc(cap(s.company_type))}</span>`);
   if (s && s.product_vs_outsourcing && s.product_vs_outsourcing !== 'unknown')
     tags.push(`<span class="b${on('pvo=' + s.product_vs_outsourcing)}" onclick="toggleBadgeFilter('${escJs('pvo=' + s.product_vs_outsourcing)}')">${esc(cap(s.product_vs_outsourcing))}</span>`);
-  (s && s.stack || []).slice(0, 6).forEach(t => {
+  const extractedSkills = (s && s.skills || [])
+    .filter(item => item.importance !== 'incidental')
+    .map(item => item.canonical_name || item.original_name);
+  [...new Set([...(s && s.stack || []), ...extractedSkills])].slice(0, 8).forEach(t => {
     const key = 'stack=' + t.toLowerCase();
     tags.push(`<span class="b stack${on(key)}" onclick="toggleBadgeFilter('${escJs(key)}')">${esc(t)}</span>`);
   });
 
   return tags.length ? `<div class="badges">${tags.join('')}</div>` : '';
+}
+
+function _renderExtractedFacts(s) {
+  if (!s) return '';
+  const band = (s.compensation_bands || []).find(item => item.compensation_type === 'base') || (s.compensation_bands || [])[0];
+  const minimum = band?.amount_min ?? s.salary_min;
+  const maximum = band?.amount_max ?? s.salary_max;
+  let compensation = '';
+  if (minimum != null || maximum != null) {
+    const range = minimum != null && maximum != null
+      ? `${Number(minimum).toLocaleString()}–${Number(maximum).toLocaleString()}`
+      : Number(minimum ?? maximum).toLocaleString();
+    const currency = band?.currency || s.salary_currency || '';
+    const period = band?.period || s.salary_period || '';
+    compensation = `${range} ${currency}${period ? ` / ${period.replace('ly', '')}` : ''}`.trim();
+  }
+  const engagement = [...new Set([
+    ...(s.contract_types || []),
+    ...(s.country_eligibility || []).flatMap(item => item.engagement_modes || []),
+  ].filter(value => value !== 'unknown'))].map(cap).join(', ');
+  const languages = (s.languages || []).map(item => `${cap(item.language)}${item.level ? ` ${item.level}` : ''}`).join(', ')
+    || (s.working_language && s.working_language !== 'unknown' ? cap(s.working_language) : '');
+  const schedule = [s.timezone_requirement, s.core_hours].filter(Boolean).join(' · ');
+  const company = [s.industry, s.company_stage, s.team_size ? `${s.team_size} team` : ''].filter(Boolean).join(' · ');
+  const item = (label, value) => value ? `<span><strong>${esc(label)}</strong>${esc(value)}</span>` : '';
+  const facts = [
+    item('Compensation', compensation), item('Engagement', engagement), item('Role', cap(s.role_family)),
+    item('Language', languages), item('Schedule', schedule), item('Company', company),
+    s.on_call != null ? item('On-call', s.on_call ? 'Yes' : 'No') : '',
+    item('Travel', s.travel_requirement), item('Office visits', s.office_visit_requirement),
+    s.eor_available != null ? item('EOR available', s.eor_available ? 'Yes' : 'No') : '',
+    s.visa_sponsorship != null ? item('Visa sponsorship', s.visa_sponsorship ? 'Yes' : 'No') : '',
+    item('Work authorization', s.work_authorization_requirement),
+  ].filter(Boolean).join('');
+  return facts ? `<div class="extracted-facts">${facts}</div>` : '';
 }
 
 function _renderSecondOpinion(j) {
@@ -613,6 +651,7 @@ function _renderCard(j) {
       </div>
       ${_renderBadges(j, s)}
       ${reason ? `<div class="verdict">${esc(reason)}</div>` : ''}
+      ${_renderExtractedFacts(s)}
       ${_renderSecondOpinion(j)}
       ${rejNote ? `<div class="rejected-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>${esc(rejNote)}</div>` : ''}
       ${(breakdown || descToggle) ? `<div class="disclosures">${breakdown}${descToggle}</div>` : ''}

@@ -74,6 +74,16 @@ class PublicJobOut(BaseModel):
     excerpt: str | None
     description: str | None
     structured_data: dict | None
+    extracted_at: datetime | None = None
+    eligibility_evidence: str | None = None
+    engagement_modes: list[str] = Field(default_factory=list)
+
+
+class PublicJobSearchOut(BaseModel):
+    items: list[PublicJobOut]
+    total: int
+    limit: int
+    offset: int
 
 
 class CatalogImport(BaseModel):

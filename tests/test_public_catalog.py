@@ -154,6 +154,97 @@ def test_public_catalog_is_available_without_account(client, logged_in_client):
     assert "score" not in response.json()[0]
 
 
+def test_public_search_filters_extracted_facts(client, logged_in_client, db_conn):
+    job_id = _create_catalog_job(logged_in_client)
+    cur = db_conn.cursor()
+    cur.execute(
+        """INSERT INTO job_fact_extractions
+               (job_id, schema_version, model, content_hash, facts)
+           VALUES (%s, 4, 'test', 'hash', %s::jsonb)""",
+        (job_id, """{
+            "summary": "Build payment services with Python.",
+            "seniority": "senior", "role_family": "backend",
+            "company_type": "scaleup", "industry": "fintech",
+            "working_language": "english", "timezone_requirement": "CET",
+            "contract_types": ["b2b"], "on_call": false,
+            "skills": [{"canonical_name": "python", "original_name": "Python",
+                "requirement": "required", "importance": "core", "min_years": 3,
+                "confidence": 0.9, "evidence": "Python required"}],
+            "compensation_bands": [{"amount_min": 100, "amount_max": 140,
+                "currency": "PLN", "period": "hourly", "tax_basis": "net",
+                "compensation_type": "base", "contract_type": "b2b",
+                "country_code": "PL", "confidence": 0.9, "evidence": "100-140 PLN/h"}]
+        }"""),
+    )
+    cur.execute(
+        """INSERT INTO job_skills
+               (job_id, canonical_name, original_name, requirement, importance, min_years, confidence, evidence)
+           VALUES (%s, 'python', 'Python', 'required', 'core', 3, .9, 'Python required')""",
+        (job_id,),
+    )
+    cur.execute(
+        """INSERT INTO job_compensation_bands
+               (job_id, amount_min, amount_max, currency, period, tax_basis,
+                compensation_type, contract_type, country_code, confidence, evidence)
+           VALUES (%s, 100, 140, 'PLN', 'hourly', 'net', 'base', 'b2b', 'PL', .9, '100-140 PLN/h')""",
+        (job_id,),
+    )
+    cur.execute(
+        """INSERT INTO job_eligibility
+               (job_id, country_code, eligible, confidence, engagement_modes, evidence)
+           VALUES (%s, 'PL', TRUE, .9, ARRAY['b2b'], 'Remote from Poland')""",
+        (job_id,),
+    )
+    db_conn.commit()
+
+    response = client.get("/api/public/jobs/search", params={
+        "technology": "python", "country": "PL", "skill": "python",
+        "company": "Acme", "seniority": "senior", "role_family": "backend",
+        "contract_type": "b2b", "currency": "PLN", "salary_min": 120,
+        "salary_period": "hourly",
+        "working_language": "english", "timezone": "CET",
+        "company_type": "scaleup", "industry": "fintech", "on_call": False,
+    })
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["total"] == 1
+    assert result["items"][0]["id"] == job_id
+    assert result["items"][0]["eligibility_evidence"] == "Remote from Poland"
+    assert result["items"][0]["engagement_modes"] == ["b2b"]
+
+    no_match = client.get("/api/public/jobs/search", params={
+        "technology": "python", "country": "PL", "salary_min": 200,
+    })
+    assert no_match.json()["total"] == 0
+
+
+def test_public_filter_options_are_scoped_to_category(client, logged_in_client, db_conn):
+    job_id = _create_catalog_job(logged_in_client, source="jobicy")
+    cur = db_conn.cursor()
+    cur.execute(
+        """INSERT INTO job_fact_extractions
+               (job_id, schema_version, model, content_hash, facts)
+           VALUES (%s, 4, 'test', 'hash', '{"industry":"fintech"}'::jsonb)""",
+        (job_id,),
+    )
+    cur.execute(
+        """INSERT INTO job_skills
+               (job_id, canonical_name, original_name, requirement, importance, confidence)
+           VALUES (%s, 'python', 'Python', 'required', 'core', .9)""",
+        (job_id,),
+    )
+    db_conn.commit()
+
+    response = client.get("/api/public/jobs/filter-options", params={"technology": "python", "country": "PL"})
+
+    assert response.status_code == 200
+    assert "Acme" in response.json()["companies"]
+    assert "jobicy" in response.json()["sources"]
+    assert "python" in response.json()["skills"]
+    assert "fintech" in response.json()["industries"]
+
+
 def test_country_filter_keeps_poland_only_job_out_of_bulgaria(client, logged_in_client):
     _create_catalog_job(logged_in_client)
     response = client.get("/api/public/jobs", params={"technology": "python", "country": "BG"})
@@ -191,6 +282,8 @@ def test_public_catalog_page_is_available_without_account(client):
     response = client.get("/jobs/react")
     assert response.status_code == 200
     assert "React jobs" in response.text
+    assert "More filters" in response.text
+    assert "Minimum listed compensation" in response.text
 
 
 def test_qa_catalog_page_is_available_without_account(client):

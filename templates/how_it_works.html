@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>How it works — JobAgentWeb</title>
-<link rel="stylesheet" href="/static/dashboard.css">
+<link rel="stylesheet" href="/static/dashboard.css?v=3">
 <link rel="stylesheet" href="/static/explain.css">
 </head>
 <body>
@@ -45,12 +45,12 @@
 </header>
 
 <section class="explain-hero">
-  <h1>From a PDF to a ranked shortlist</h1>
+  <h1>Browse freely. Personalize when you are ready.</h1>
   <p class="lede">
-    JobAgentWeb is only the dashboard — everything below runs in <b>JobAgent</b>, a small
-    pipeline that reads your CV, learns what you're looking for, and reads hundreds of
-    postings a day so you only have to look at the ones worth your time, running locally
-    on your own machine. Here's exactly what happens at each step.
+    JobAgent combines a public catalog of remote roles with an optional personal ranking.
+    Without an account, you can browse jobs collected from multiple boards and company career
+    pages. After signing in, your locally run JobAgent can use your CV, preferences and decisions
+    to score the same shared postings specifically for you.
   </p>
 </section>
 
@@ -59,13 +59,14 @@
   <a href="#search">02 · Searching, every day</a>
   <a href="#evaluate">03 · How a posting gets evaluated</a>
   <a href="#learn">04 · Getting smarter over time</a>
+  <a href="#technical">05 · Technical setup</a>
 </nav>
 
 <!-- 01 — Getting started -->
 <section class="explain-section" id="start">
   <div class="eyebrow">01</div>
   <h2>Getting started</h2>
-  <p class="section-lede">Two things happen once, before any searching begins: your CV becomes a profile, and you tell the agent what actually matters to you. Both happen in JobAgent, and show up read-only on this dashboard's <a href="/preferences">Preferences</a> page.</p>
+  <p class="section-lede">The public catalog requires no setup. Personalization begins when you create an account, add your CV and define what matters to you. Your preferences remain editable on the <a href="/preferences">Preferences</a> page.</p>
 
   <div class="concept-grid">
     <div class="concept-card">
@@ -73,14 +74,14 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z"/><path d="M9 13h6M9 17h6"/></svg>
       </span>
       <h3>Your CV becomes a profile</h3>
-      <p>You upload a PDF. AI reads it and pulls out the things that matter for matching: your tech stack, years of experience, seniority level, and a short summary — the same way a recruiter would skim it, just faster and every time consistently.</p>
+      <p>You upload a PDF. AI turns it into a structured profile containing your experience, technologies and seniority. The personal agent uses that profile for scoring; the shared job record remains the same for every user.</p>
     </div>
     <div class="concept-card">
       <span class="concept-card__icon" aria-hidden="true">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
       </span>
       <h3>You answer a few questions</h3>
-      <p>Your CV can't tell the agent your salary floor, whether you'll do hybrid, or which technologies you'd rather avoid — so a short questionnaire fills in the rest. Every answer is editable later in JobAgent, and nothing here is guessed.</p>
+      <p>Your CV cannot express your salary floor, acceptable engagement model, work country or technologies you want to avoid. A questionnaire adds those constraints and preferences, and you can update them later.</p>
     </div>
   </div>
 </section>
@@ -89,7 +90,7 @@
 <section class="explain-section" id="search">
   <div class="eyebrow">02</div>
   <h2>Searching, every day</h2>
-  <p class="section-lede">You never write a search query or pick a job board yourself — the agent derives search terms from your CV and preferences, and knows which sites to check based on where you're willing to work.</p>
+  <p class="section-lede">JobAgent collects a shared catalog from public APIs, remote boards, ATS feeds and selected regional boards. A personal run can additionally search LinkedIn using your own criteria. Every collected posting is deduplicated and becomes reusable across the public catalog and personal rankings.</p>
 
   <div class="route-map">
     <div class="route-row"><span class="label">LinkedIn</span><span class="rule">searched for every country you're open to — the widest net.</span></div>
@@ -134,9 +135,9 @@
       <span class="flow__icon" aria-hidden="true">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
       </span>
-      <h3>A second, independent AI double-checks it</h3>
+      <h3>A second AI review double-checks it</h3>
       <p>A skill match can look great on paper and still hide a dealbreaker — the wrong seniority, the wrong company type — especially when the stack lines up almost perfectly. A separate review pass looks specifically for that pattern and can bump a posting down (or flag it as underrated) before you ever see the list.</p>
-      <div class="flow__detail"><b>Why two AI passes, not one:</b> a single model can be consistently fooled by the same kind of mismatch. A second, independent read — checking the first one's work rather than starting over — catches what one pass alone tends to miss, without the cost of scoring everything twice from scratch.</div>
+      <div class="flow__detail"><b>Why two AI passes, not one:</b> a single score can overvalue a strong technology match while missing a practical constraint. The review pass challenges the initial result and flags likely dealbreakers or underrated offers before the final list is shown.</div>
     </div>
   </div>
 
@@ -166,8 +167,46 @@
   </div>
 </section>
 
+<section class="explain-section" id="technical">
+  <div class="eyebrow">05</div>
+  <h2>Technical process and requirements</h2>
+  <p class="section-lede">JobAgent is a self-hosted, two-part system. The automation runs on your own computer, while JobAgentWeb provides the shared API, dashboard and PostgreSQL storage. This keeps collection—including the LinkedIn browser session—under your control without duplicating the shared job catalog for every user.</p>
+
+  <div class="concept-grid">
+    <div class="concept-card">
+      <h3>Local JobAgent</h3>
+      <p>Requires Python 3.12+, an internet connection and a checkout of the JobAgent repository. It runs collection, extraction, filtering, scoring and ranking commands. LinkedIn collection uses a browser profile stored on that machine and is available only during a personal run.</p>
+    </div>
+    <div class="concept-card">
+      <h3>JobAgentWeb</h3>
+      <p>Requires Python 3.11+ and PostgreSQL. It exposes the authenticated API, serves the public catalog and personal dashboard, stores canonical job records, and keeps each user's CV, preferences, scores, ranking and decisions isolated.</p>
+    </div>
+    <div class="concept-card">
+      <h3>Service credentials</h3>
+      <p>The local agent needs access to JobAgentWeb through an API key or authenticated session. AI extraction and ranking currently require Anthropic credentials; semantic embeddings and reranking require Voyage AI credentials. The web service never needs your LinkedIn password.</p>
+    </div>
+    <div class="concept-card">
+      <h3>What “local” means</h3>
+      <p>The orchestration process and browser automation execute on your machine. Job records and private results are persisted in your JobAgentWeb deployment, and the configured AI providers receive the prompt data required for processing. The models themselves do not run locally.</p>
+    </div>
+  </div>
+
+  <div class="route-map">
+    <div class="route-row"><span class="label">1 · Collect locally</span><span class="rule">JobAgent queries public APIs, job boards and ATS feeds. A personal run may also use your local LinkedIn browser profile.</span></div>
+    <div class="route-row"><span class="label">2 · Store once</span><span class="rule">Objective posting data is sent through the authenticated API to JobAgentWeb, normalized, deduplicated and stored as one reusable shared record.</span></div>
+    <div class="route-row"><span class="label">3 · Extract facts</span><span class="rule">AI converts the description into versioned structured data such as technologies, seniority, compensation, engagement model and country eligibility.</span></div>
+    <div class="route-row"><span class="label">4 · Personalize privately</span><span class="rule">For a signed-in user, the local agent evaluates eligible jobs against that user's CV, constraints, preferences and learned signals. Scores and rankings are never exposed in the public catalog.</span></div>
+    <div class="route-row"><span class="label">5 · Learn</span><span class="rule">Apply and reject decisions remain attached to the user and influence later personal runs without changing the shared job record.</span></div>
+  </div>
+
+  <div class="callout">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+    <span>For installation commands, environment variables and deployment details, use the technical documentation in the <a href="https://github.com/BaranskiTomasz/JobAgent" target="_blank" rel="noopener">JobAgent repository</a> and its linked JobAgentWeb setup guide.</span>
+  </div>
+</section>
+
 <div class="explain-cta">
-  <p>Changing preferences, uploading a new CV, or triggering a run all happen in JobAgent locally — this dashboard is for reviewing results and making apply/reject/reviewed decisions.</p>
+  <p>Browse the shared catalog without an account, or sign in to manage your CV and preferences, review personalized results and record apply/reject decisions. Collection and AI processing are started by JobAgent running on your machine.</p>
 </div>
 
 {% include "_footer.html" %}

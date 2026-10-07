@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Remote {{ technology_label }} jobs — JobAgent</title>
 <meta name="description" content="Current remote {{ technology_label }} jobs available to professionals working from Poland or Bulgaria.">
-<link rel="stylesheet" href="/static/dashboard.css?v=2">
-<link rel="stylesheet" href="/static/catalog.css?v=2">
+<link rel="stylesheet" href="/static/dashboard.css?v=3">
+<link rel="stylesheet" href="/static/catalog.css?v=4">
 </head>
 <body data-technology="{{ technology }}" data-authenticated="{{ 'true' if user else 'false' }}">
 <header class="topbar">
@@ -15,15 +15,27 @@
     <span class="sub">Remote jobs</span>
   </div>
   <div class="top-actions">
-    <a class="header-link" href="/how-it-works">How it works</a>
-    {% if user %}
-    <a class="header-link" href="/?view=dashboard">My matches</a>
-    <a class="header-link" href="/preferences">Preferences</a>
-    <form method="post" action="/logout"><button class="header-button" type="submit">Log out</button></form>
-    {% else %}
-    <a class="header-link" href="/login">Log in</a>
-    <a class="header-button primary" href="/register">Create account</a>
-    {% endif %}
+    <details class="nav-menu">
+      <summary class="icon-btn" aria-label="Menu" title="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></summary>
+      <nav class="nav-menu-panel">
+        {% if user %}
+        <a href="/?view=dashboard">My matches</a>
+        <a href="/jobs">Browse jobs</a>
+        <a href="/preferences">Preferences</a>
+        {% if user.is_admin %}<a href="/admin">Admin</a>{% endif %}
+        {% else %}
+        <a href="/jobs">Browse jobs</a>
+        <a href="/login">Log in</a>
+        <a href="/register">Create account</a>
+        {% endif %}
+        <a href="/how-it-works">How it works</a>
+        <button type="button" id="catalog-about">About this catalog</button>
+        <a href="https://github.com/BaranskiTomasz/JobAgent" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a>
+        <a href="https://www.linkedin.com/in/baranskitomasz/" target="_blank" rel="noopener">Author <span class="ext">↗</span></a>
+        <button type="button" id="catalog-theme-toggle">Theme</button>
+        {% if user %}<form method="post" action="/logout"><button type="submit">Log out</button></form>{% endif %}
+      </nav>
+    </details>
   </div>
 </header>
 
@@ -34,8 +46,8 @@
       <h1>{{ technology_label }} jobs</h1>
       <p>Full-remote roles with evidence that you can work from Poland or Bulgaria. Updated from the last 14 days.</p>
     </div>
-    <div class="catalog-count"><strong id="catalog-count">—</strong><span>matching jobs</span></div>
   </section>
+  <div class="filter-bar" id="catalog-filter-bar"><span class="fb-label">Active filters:</span><span id="catalog-filter-chips"></span></div>
 
   <nav class="technology-tabs" aria-label="Job categories">
     {% for slug, label in [('php','PHP'),('python','Python'),('nodejs','Node.js'),('react','React'),('angular','Angular'),('qa','QA')] %}
@@ -49,26 +61,19 @@
       <input id="search-filter" type="search" placeholder="Search title, employer, skills or description">
     </div>
     <select class="tool-select" id="country-filter" aria-label="Work country">
-      <option value="PL">Work from Poland</option>
-      <option value="BG">Work from Bulgaria</option>
+      <option value="PL">Remote work from Poland</option>
+      <option value="BG">Remote work from Bulgaria</option>
     </select>
     <select class="tool-select" id="source-filter" aria-label="Source"><option value="">All sources</option></select>
+    <select class="tool-select" id="company-filter" aria-label="Employer"><option value="">All employers</option></select>
     <select class="tool-select" id="seniority-filter" aria-label="Seniority">
       <option value="">All seniority levels</option><option value="junior">Junior</option><option value="mid">Mid</option><option value="senior">Senior</option><option value="lead">Lead</option><option value="director">Director</option>
     </select>
     <select class="tool-select" id="sort-filter" aria-label="Sort jobs">
-      <option value="date">Newest first</option><option value="company">Employer A–Z</option><option value="title">Title A–Z</option>
+      <option value="date">Newest first</option><option value="salary">Highest compensation</option><option value="company">Employer A–Z</option><option value="title">Title A–Z</option>
     </select>
+    <button class="tool-btn" id="more-filters" type="button">More filters <span class="fbadge" id="filter-count"></span></button>
     <button class="tool-btn" id="clear-filters" type="button">Clear filters</button>
-  </section>
-
-  <section class="personalize-panel">
-    <div><strong>Want these jobs ranked for you?</strong><p>Add your CV and preferences. The same shared jobs will be scored against your profile.</p></div>
-    {% if user %}
-    <button id="personalize-button" type="button">Add to my agent</button>
-    {% else %}
-    <a id="register-personalize" class="button" href="/register?next={{ ('/jobs/' ~ technology ~ '?country=PL')|urlencode }}">Create account and personalize</a>
-    {% endif %}
   </section>
 
   <div id="catalog-status" role="status">Loading jobs…</div>
@@ -76,7 +81,44 @@
   <button id="load-more" class="load-more" type="button" hidden>Show more</button>
 </main>
 
+<div class="overlay" id="catalog-filters-modal" aria-hidden="true">
+  <div class="modal catalog-filter-modal" role="dialog" aria-modal="true" aria-labelledby="catalog-filters-title">
+    <div class="modal-hd"><h2 id="catalog-filters-title">More filters</h2><button class="modal-close" id="close-filters" type="button" aria-label="Close">✕</button></div>
+    <div class="modal-bd catalog-filter-grid">
+      <label>Technology or skill<select id="skill-filter"><option value="">Any skill</option></select></label>
+      <label>Role family<select id="role-filter"><option value="">Any role</option><option value="backend">Backend</option><option value="frontend">Frontend</option><option value="fullstack">Full-stack</option><option value="mobile">Mobile</option><option value="qa">QA</option><option value="devops">DevOps</option><option value="data">Data</option><option value="ml">Machine learning</option><option value="security">Security</option><option value="management">Management</option></select></label>
+      <label>Engagement<select id="contract-filter"><option value="">Any engagement</option><option value="b2b">B2B</option><option value="employment">Employment</option><option value="contractor">Contractor</option><option value="eor">EOR</option><option value="mandate">Mandate</option></select></label>
+      <label>Working language<select id="language-filter"><option value="">Any language</option><option value="english">English</option><option value="polish">Polish</option></select></label>
+      <label>Company type<select id="company-type-filter"><option value="">Any company type</option><option value="startup">Startup</option><option value="scaleup">Scale-up</option><option value="enterprise">Enterprise</option><option value="agency">Agency</option></select></label>
+      <label>Industry<select id="industry-filter"><option value="">Any industry</option></select></label>
+      <label>Compensation currency<select id="currency-filter"><option value="">Any currency</option><option>PLN</option><option>EUR</option><option>USD</option><option>GBP</option></select></label>
+      <label>Minimum listed compensation<input id="salary-filter" type="number" min="0" inputmode="numeric" placeholder="e.g. 60000"></label>
+      <label>Compensation period<select id="salary-period-filter"><option value="">Any period</option><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label>
+    </div>
+    <div class="modal-ft"><button class="btn-ghost" id="reset-more-filters" type="button">Reset</button><button class="btn-primary" id="apply-filters" type="button">Show jobs</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="catalog-intro-modal" aria-hidden="true">
+  <div class="modal catalog-intro-modal" role="dialog" aria-modal="true" aria-labelledby="catalog-intro-title">
+    <div class="modal-hd"><h2 id="catalog-intro-title">Remote jobs, gathered in one place</h2><button class="modal-close" id="close-intro" type="button" aria-label="Close">✕</button></div>
+    <div class="modal-bd">
+      <p class="intro-lede">JobAgent brings together current remote roles from specialist job boards and company career pages. The public catalog is limited to jobs with evidence that they can be performed from Poland or Bulgaria, so you spend less time opening listings that are not available where you live.</p>
+      <p class="intro-detail">Listings from the last 14 days are normalized into one consistent view. When the same role appears in more than one source, JobAgent merges it into a single listing while preserving its source links. You can filter the catalog using details extracted from the job description, including technology, seniority, engagement type and compensation.</p>
+      <p class="intro-detail">The personal agent and browser automation run on your own computer under your control—not as a hosted bot on this website. Shared job data and your private results are stored by JobAgentWeb, while configured AI providers process the content needed for extraction and ranking. See the <a href="/how-it-works#technical">technical process and requirements</a>.</p>
+      <div class="source-cloud" aria-label="Job sources">
+        {% for image, name in [('linkedin.ico','LinkedIn'),('remotive.ico','Remotive'),('remoteok.ico','Remote OK'),('jobicy.ico','Jobicy'),('weworkremotely.ico','We Work Remotely'),('himalayas.ico','Himalayas'),('arbeitnow.png','Arbeitnow'),('workingnomads.ico','Working Nomads'),('justjoin.png','Just Join IT'),('nofluffjobs.ico','No Fluff Jobs'),('solidjobs.ico','SolidJobs'),('jobscollider.ico','JobsCollider'),('theprotocol.ico','theprotocol.it'),('greenhouse.png','Greenhouse'),('lever.png','Lever'),('ashby.png','Ashby'),('hackernews.svg','Hacker News')] %}
+        <span class="source-logo"><img src="/static/source-logos/{{ image }}" alt="" width="25" height="25">{{ name }}</span>
+        {% endfor %}
+      </div>
+      <p class="source-note">Source names and logos belong to their respective owners.</p>
+      <div class="intro-modes"><p><strong>No account required</strong>Browse, search and filter the shared catalog without uploading a CV or creating a profile.</p><p><strong>Personalized mode</strong>Create an account, add your CV and preferences, and JobAgent will privately score and rank the same shared jobs for you. Your decisions help improve future matches.</p></div>
+    </div>
+    <div class="modal-ft"><a class="btn-ghost intro-link" href="/how-it-works">How it works</a><button class="btn-primary" id="start-browsing" type="button">Browse jobs</button></div>
+  </div>
+</div>
+
 {% include "_footer.html" %}
-<script src="/static/catalog.js?v=2"></script>
+<script src="/static/catalog.js?v=4"></script>
 </body>
 </html>

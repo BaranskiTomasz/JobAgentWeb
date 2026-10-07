@@ -300,6 +300,9 @@ h1,h2,h3 { text-wrap: balance; }
 .meter-fill.dim { background: var(--signal-dim); }
 
 .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.extracted-facts { display: flex; flex-wrap: wrap; gap: 7px 18px; margin: 10px 0; color: var(--ink-soft); font-size: .73rem; }
+.extracted-facts span { display: inline-flex; align-items: baseline; gap: 5px; }
+.extracted-facts strong { color: var(--ink); font-weight: 600; }
 .b { font-size: 0.72rem; border-radius: 7px; padding: 3px 9px; border: 1px solid var(--line); background: var(--paper); color: var(--ink-soft); display: inline-flex; align-items: center; gap: 5px; cursor: pointer; transition: border-color .12s, background .12s, color .12s; }
 .b:hover { border-color: var(--signal); color: var(--signal); }
 .b.key { border-color: color-mix(in srgb, var(--signal) 30%, var(--line)); color: var(--signal); background: var(--signal-soft); }

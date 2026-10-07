@@ -4,7 +4,7 @@ The multi-tenant backend for [JobAgent](https://github.com/BaranskiTomasz/JobAge
 
 The companion collector currently supplies jobs from LinkedIn; international remote boards including Remotive, Remote OK, Working Nomads, We Work Remotely, Himalayas, Jobicy, JobsCollider, and Arbeitnow; direct company boards hosted by Greenhouse, Lever, and Ashby; Hacker News “Who is hiring?”; and the Poland-focused justjoin.it, theprotocol.it, it.pracuj.pl, NoFluffJobs, and SOLID.Jobs. JobAgentWeb stores each source identifier and exposes its display name in dashboard filters.
 
-Visitors land directly on the shared catalog and can browse `/jobs/{technology}` for PHP, Python, Node.js, React, Angular, and QA. The country selector exposes only full-remote postings with evidence that work is possible from Poland or Bulgaria. Search, source, seniority, employer/skill badges, sorting, and expandable descriptions work without an account. Public responses contain objective posting facts and source links, never user scores, ranking, CV data, preferences, or application state. A logged-in visitor can attach the current technology/country catalog slice to their account without recollecting it; this creates `user_job_states` for the existing shared `job_postings`.
+Visitors land directly on the shared catalog and can browse `/jobs/{technology}` for PHP, Python, Node.js, React, Angular, and QA. The country selector exposes only full-remote postings with evidence that work is possible from Poland or Bulgaria. Search, source, seniority, employer/skill badges, sorting, and expandable descriptions work without an account. Public responses contain objective posting facts and source links, never user scores, ranking, CV data, preferences, or application state. The authenticated `POST /api/public/jobs/personalize` endpoint can attach a technology/country catalog slice to an account without recollecting it; this creates `user_job_states` for the existing shared `job_postings`.
 
 Incoming postings are deduplicated across sources using canonical URLs, stable source requisition IDs, exact content fingerprints, and a conservative company/title plus description-similarity check. Matching runs again after descriptions and extracted facts arrive. High-confidence matches are merged transactionally, uncertain pairs remain reviewable candidates, and every decision is retained with its method, confidence, and evidence. Every original source URL remains available as an alias of the canonical posting. Per-user AI scores and rankings carry input fingerprints so clients can detect and replace stale results.
 
@@ -77,7 +77,7 @@ INVITE_CODE=...             # required for /register to accept anyone at all
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Visit `http://localhost:8000` — first-time visitors are redirected to `/login`, with a link to `/register`.
+Visit `http://localhost:8000` to open the public Python catalog. Browsing requires no account; log in or register from the site menu to access personal preferences and ranked results.
 
 ### Connect a local JobAgent
 
@@ -107,7 +107,7 @@ curl -fsS "$JOBAGENTWEB_BASE_URL/healthz"
 
 ## API surface
 
-All JSON endpoints live under `/api/*` and require a session cookie (`deps.get_current_user`); browser routes (`/`, `/login`, `/register`, `/admin`) render Jinja2 templates.
+JSON endpoints live under `/api/*`. The read-only `/api/public/jobs`, `/search`, `/filter-options`, and `/facets` endpoints are deliberately available without authentication; `/api/public/jobs/personalize` and all personal-data endpoints require a session or the appropriately scoped API key. Browser routes render Jinja2 templates.
 
 | Router | Prefix | Covers |
 |--------|--------|--------|
