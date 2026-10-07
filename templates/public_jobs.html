@@ -1,59 +1,82 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Remote {{ technology_label }} jobs — JobAgent</title>
-<meta name="description" content="Aktualne oferty pracy zdalnej w technologii {{ technology }} dostępne z Polski i Bułgarii.">
-<link rel="stylesheet" href="/static/catalog.css?v=1">
+<meta name="description" content="Current remote {{ technology_label }} jobs available to professionals working from Poland or Bulgaria.">
+<link rel="stylesheet" href="/static/dashboard.css?v=2">
+<link rel="stylesheet" href="/static/catalog.css?v=2">
 </head>
 <body data-technology="{{ technology }}" data-authenticated="{{ 'true' if user else 'false' }}">
-<header class="catalog-header">
-  <a class="brand" href="/">JobAgent<span>.</span></a>
-  <nav>
-    <a href="/how-it-works">Jak to działa</a>
-    {% if user %}<a href="/">Mój ranking</a>{% else %}<a href="/login">Zaloguj się</a>{% endif %}
-  </nav>
+<header class="topbar">
+  <div class="brand">
+    <a href="/" class="wordmark-link"><span class="wordmark">JobAgent<span class="dot">.</span></span></a>
+    <span class="sub">Remote jobs</span>
+  </div>
+  <div class="top-actions">
+    <a class="header-link" href="/how-it-works">How it works</a>
+    {% if user %}
+    <a class="header-link" href="/?view=dashboard">My matches</a>
+    <a class="header-link" href="/preferences">Preferences</a>
+    <form method="post" action="/logout"><button class="header-button" type="submit">Log out</button></form>
+    {% else %}
+    <a class="header-link" href="/login">Log in</a>
+    <a class="header-button primary" href="/register">Create account</a>
+    {% endif %}
+  </div>
 </header>
 
-<main>
-  <section class="catalog-hero">
-    <p class="eyebrow">Wspólny katalog ofert remote</p>
-    <h1>Oferty {{ technology_label }}</h1>
-    <p>Jedna lista z wielu źródeł. Tylko oferty umożliwiające pracę z wybranego kraju.</p>
+<main class="catalog-wrap">
+  <section class="catalog-intro">
+    <div>
+      <p class="eyebrow">Remote jobs from multiple sources</p>
+      <h1>{{ technology_label }} jobs</h1>
+      <p>Full-remote roles with evidence that you can work from Poland or Bulgaria. Updated from the last 14 days.</p>
+    </div>
+    <div class="catalog-count"><strong id="catalog-count">—</strong><span>matching jobs</span></div>
   </section>
 
-  <section class="catalog-controls" aria-label="Filtry ofert">
-    <div class="technology-tabs">
-      {% for slug, label in [('php','PHP'),('python','Python'),('nodejs','Node.js'),('react','React'),('angular','Angular'),('qa','QA')] %}
-      <a href="/jobs/{{ slug }}" class="{{ 'active' if technology == slug else '' }}">{{ label }} <span data-facet="{{ slug }}"></span></a>
-      {% endfor %}
+  <nav class="technology-tabs" aria-label="Job categories">
+    {% for slug, label in [('php','PHP'),('python','Python'),('nodejs','Node.js'),('react','React'),('angular','Angular'),('qa','QA')] %}
+    <a href="/jobs/{{ slug }}" class="{{ 'active' if technology == slug else '' }}">{{ label }} <span data-facet="{{ slug }}"></span></a>
+    {% endfor %}
+  </nav>
+
+  <section class="catalog-toolbar" aria-label="Job filters">
+    <div class="search-wrap catalog-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input id="search-filter" type="search" placeholder="Search title, employer, skills or description">
     </div>
-    <label>Kraj wykonywania pracy
-      <select id="country-filter">
-        <option value="PL">Polska</option>
-        <option value="BG">Bułgaria</option>
-      </select>
-    </label>
+    <select class="tool-select" id="country-filter" aria-label="Work country">
+      <option value="PL">Work from Poland</option>
+      <option value="BG">Work from Bulgaria</option>
+    </select>
+    <select class="tool-select" id="source-filter" aria-label="Source"><option value="">All sources</option></select>
+    <select class="tool-select" id="seniority-filter" aria-label="Seniority">
+      <option value="">All seniority levels</option><option value="junior">Junior</option><option value="mid">Mid</option><option value="senior">Senior</option><option value="lead">Lead</option><option value="director">Director</option>
+    </select>
+    <select class="tool-select" id="sort-filter" aria-label="Sort jobs">
+      <option value="date">Newest first</option><option value="company">Employer A–Z</option><option value="title">Title A–Z</option>
+    </select>
+    <button class="tool-btn" id="clear-filters" type="button">Clear filters</button>
   </section>
 
   <section class="personalize-panel">
-    <div>
-      <strong>Chcesz zobaczyć najlepiej dopasowane oferty?</strong>
-      <p>Dodaj CV i preferencje, a JobAgent oceni tę samą pulę specjalnie dla Ciebie.</p>
-    </div>
+    <div><strong>Want these jobs ranked for you?</strong><p>Add your CV and preferences. The same shared jobs will be scored against your profile.</p></div>
     {% if user %}
-    <button id="personalize-button" type="button">Dodaj do mojego agenta</button>
+    <button id="personalize-button" type="button">Add to my agent</button>
     {% else %}
-    <a id="register-personalize" class="button" href="/register?next={{ ('/jobs/' ~ technology ~ '?country=PL')|urlencode }}">Załóż konto i personalizuj</a>
+    <a id="register-personalize" class="button" href="/register?next={{ ('/jobs/' ~ technology ~ '?country=PL')|urlencode }}">Create account and personalize</a>
     {% endif %}
   </section>
 
-  <div id="catalog-status" role="status">Ładowanie ofert…</div>
-  <section id="job-list" class="job-list" aria-live="polite"></section>
-  <button id="load-more" class="load-more" type="button" hidden>Pokaż więcej</button>
+  <div id="catalog-status" role="status">Loading jobs…</div>
+  <section id="job-list" class="jobs catalog-jobs" aria-live="polite"></section>
+  <button id="load-more" class="load-more" type="button" hidden>Show more</button>
 </main>
 
-<script src="/static/catalog.js?v=1"></script>
+{% include "_footer.html" %}
+<script src="/static/catalog.js?v=2"></script>
 </body>
 </html>

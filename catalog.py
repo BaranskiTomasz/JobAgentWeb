@@ -23,8 +23,26 @@ TECHNOLOGY_PATTERNS = {
 
 COUNTRY_NAMES = {"PL": ("poland", "polska"), "BG": ("bulgaria", "bułgaria", "bulgariya")}
 REGIONAL_MARKERS = ("worldwide", "anywhere", "global", "europe", "european", "emea", "eea", "eu-only", "eu only")
-REMOTE_MARKERS = ("remote", "zdaln", "work from home")
-CLASSIFIER_VERSION = 2
+# Bump this whenever the public-catalog qualification rules change.  The
+# migration backfill re-runs the classifier for rows carrying an older value.
+CLASSIFIER_VERSION = 3
+
+# A public catalog item must be unambiguously full-remote.  In particular, a
+# source may advertise both remote and hybrid work; that is useful to a
+# personal search, but it is not a full-remote catalog result.
+NON_FULL_REMOTE_LOCATION_MARKERS = (
+    "hybrid", "hybryd", "on-site", "onsite", "on site", "office-based", "office based",
+)
+NON_FULL_REMOTE_DESCRIPTION_PATTERNS = (
+    r"\bhybrid\s+(?:work|working|role|model|position|schedule)\b",
+    r"\b(?:work|working)\s+(?:in|from)\s+(?:the\s+)?office\b",
+    r"\b(?:required|mandatory)\s+(?:office|onsite|on-site)\b",
+    r"\b\d+\s+(?:office|onsite|on-site)\s+days?\b",
+    r"\boffice\s+days?\b",
+)
+EXPLICIT_BROAD_COUNTRIES = {
+    "EU", "EEA", "EUROPE", "EUROPEAN UNION", "EMEA", "WORLDWIDE", "GLOBAL", "ANYWHERE",
+}
 
 
 def _json_dict(value) -> dict:
@@ -76,8 +94,32 @@ def classify_catalog_job(job: dict) -> dict:
     structured_regions = structured.get("remote_regions") or []
     regions.extend(structured_regions if isinstance(structured_regions, list) else [structured_regions])
     eligibility_text = " ".join([location, *[str(region).lower() for region in regions]])
-    remote = any(variant.get("remote") is True for variant in source_variants)
-    remote = remote or structured.get("remote") is True or any(marker in location for marker in REMOTE_MARKERS)
+
+    # Only an explicit remote flag (from the source or extraction) qualifies
+    # for the public catalog.  Inferring remote from a word in a location such
+    # as ``Berlin``/``Remote-friendly`` was the source of hybrid and onsite
+    # rows leaking into the catalog.  A clearly labelled "fully remote"
+    # location remains a safe fallback for legacy rows without structured
+    # data.
+    source_remote = any(variant.get("remote") is True for variant in source_variants)
+    extracted_remote = structured.get("remote") is True
+    remote = source_remote or extracted_remote
+    if not remote and re.search(r"\b(?:fully|100%|all)\s*[- ]?remote\b|\bremote[- ]only\b", location):
+        remote = True
+
+    source_hybrid = any(variant.get("hybrid") is True for variant in source_variants)
+    extracted_hybrid = structured.get("hybrid") is True
+    # The location is source-native for many boards (for example
+    # ``Warsaw, Poland (Hybrid)``), so treat it as a hard exclusion.  The
+    # description check is intentionally conservative: an ambiguous posting
+    # mentioning hybrid/onsite work should not become a public full-remote
+    # result until extraction supplies a clean remote-only fact.
+    description = str(job.get("description") or "").lower()
+    has_non_full_remote_marker = (
+        any(marker in location for marker in NON_FULL_REMOTE_LOCATION_MARKERS)
+        or any(re.search(pattern, description) for pattern in NON_FULL_REMOTE_DESCRIPTION_PATTERNS)
+    )
+    full_remote = remote and not (source_hybrid or extracted_hybrid or has_non_full_remote_marker)
 
     countries = []
     exact_countries = [
@@ -98,19 +140,54 @@ def classify_catalog_job(job: dict) -> dict:
             code for code, names in COUNTRY_NAMES.items()
             if any(re.search(rf"(?:remote|work(?:ing)? from)[^.!?\n]{{0,50}}\b{re.escape(name)}\b", text, re.IGNORECASE) for name in names)
         ]
-    explicit_eligibility = {
-        str(item.get("country_code") or "").upper()
-        for item in structured.get("country_eligibility") or []
-        if isinstance(item, dict) and item.get("eligible") is True
-    }
-    countries = sorted(set(countries) | (explicit_eligibility & {"PL", "BG"}))
+    # Structured country eligibility is stronger than an inferred match from
+    # a location/region.  If extraction explicitly says a country is not (or
+    # is not known to be) eligible, never add it back from broad geographic
+    # text.  This prevents e.g. "Remote" + an employer's country from being
+    # presented as candidate eligibility.
+    country_items = {}
+    broad_eligible = False
+    # Source-native eligibility is stronger than free text, while extracted
+    # facts take precedence when both layers provide the same country.
+    for item in [
+        item
+        for variant in source_variants
+        for item in variant.get("country_eligibility") or []
+    ] + list(structured.get("country_eligibility") or []):
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("country_code") or "").strip().upper()
+        if code in EXPLICIT_BROAD_COUNTRIES and item.get("eligible") is True:
+            broad_eligible = True
+        if code in {"PL", "BG"}:
+            country_items[code] = item
 
-    confidence = "high" if any(variant.get("remote") is True for variant in source_variants) and countries else "medium" if countries else "unknown"
+    explicit_eligibility = {
+        code for code, item in country_items.items() if item.get("eligible") is True
+    }
+    explicit_ineligible = set(country_items) - explicit_eligibility
+    countries = (set(countries) | explicit_eligibility | ({"PL", "BG"} if broad_eligible else set())) - explicit_ineligible
+    if not full_remote:
+        countries = set()
+    countries = sorted(countries)
+
+    # Direct country eligibility evidence should be reflected in the catalog
+    # metadata confidence.  Preserve the old high-confidence behavior for
+    # source-native remote regions, while broad/inferred wording stays medium.
+    has_structured_evidence = any(
+        item.get("eligible") is True and (item.get("evidence") or item.get("confidence") is not None)
+        for item in country_items.values()
+    ) or broad_eligible
+    source_country_evidence = bool(source_remote and exact_countries)
+    confidence = (
+        "high" if countries and (has_structured_evidence or source_country_evidence)
+        else "medium" if countries else "unknown"
+    )
     return {
         "technologies": technologies,
         "work_countries": sorted(countries),
         "eligibility_confidence": confidence,
-        "is_public": bool(technologies and countries and job.get("description")),
+        "is_public": bool(technologies and countries and job.get("description") and full_remote),
     }
 
 

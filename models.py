@@ -72,6 +72,8 @@ class PublicJobOut(BaseModel):
     work_countries: list[str]
     eligibility_confidence: str
     excerpt: str | None
+    description: str | None
+    structured_data: dict | None
 
 
 class CatalogImport(BaseModel):

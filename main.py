@@ -70,9 +70,11 @@ def _require_user(request: Request, conn) -> dict | None:
 def dashboard(request: Request, view: str | None = None, conn=Depends(get_db)):
     user = _require_user(request, conn)
     if user is None:
-        # Distinct from landing.html, which assumes an already-logged-in,
-        # zero-jobs account and addresses the user by username.
-        return templates.TemplateResponse(request, "public_landing.html", {"user": None})
+        return templates.TemplateResponse(request, "public_jobs.html", {
+            "user": None,
+            "technology": "python",
+            "technology_label": "Python",
+        })
     stats = jobs_repo.get_stats(conn, user["id"])
     if stats["total"] == 0 and view != "dashboard":
         return templates.TemplateResponse(request, "landing.html", {"user": user})

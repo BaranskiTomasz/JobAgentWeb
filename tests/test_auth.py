@@ -196,7 +196,7 @@ def test_dashboard_shows_public_landing_when_unauthenticated(client):
     # See tests/test_main_routes.py for full coverage of public_landing.html.
     resp = client.get("/", follow_redirects=False)
     assert resp.status_code == 200
-    assert "Register" in resp.text
+    assert "Create account" in resp.text
 
 
 def test_logout_clears_session(logged_in_client):

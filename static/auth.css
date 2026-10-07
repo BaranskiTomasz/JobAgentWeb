@@ -1,4 +1,7 @@
-.auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.auth-wrap { min-height: calc(100vh - 58px); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.auth-nav-link { color: var(--ink-soft); font-size: .82rem; text-decoration: none; }
+.auth-nav-link:hover { color: var(--signal); }
+.auth-nav-button { font-size: .8rem; text-decoration: none; }
 
 .auth-card { width: 100%; max-width: 420px; }
 

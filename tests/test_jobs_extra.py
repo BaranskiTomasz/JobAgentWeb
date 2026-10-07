@@ -149,6 +149,67 @@ def test_browser_session_cannot_replace_shared_facts(logged_in_client):
     assert response.status_code == 403
 
 
+def test_catalog_insert_is_shared_only(logged_in_client, user, monkeypatch):
+    monkeypatch.setattr("deps.JOBAGENT_API_KEY", "catalog-test-key")
+    monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", str(user["id"]))
+    response = logged_in_client.post(
+        "/api/jobs/catalog",
+        headers={"X-JobAgent-Api-Key": "catalog-test-key"},
+        json={
+            "title": "Remote Python Engineer",
+            "company": "Acme",
+            "location": "Europe (Remote)",
+            "url": "https://example.com/jobs/catalog-shared-only",
+            "source": "greenhouse",
+            "description": "Build Python services remotely across Europe.",
+            "source_structured_data": {"remote": True, "remote_regions": ["Europe"]},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["job_id"] is not None
+    assert logged_in_client.get("/api/jobs").json() == []
+    urls = logged_in_client.get(
+        "/api/jobs/catalog/urls",
+        headers={"X-JobAgent-Api-Key": "catalog-test-key"},
+    )
+    assert urls.status_code == 200
+    assert "https://example.com/jobs/catalog-shared-only" in urls.json()["urls"]
+
+
+def test_catalog_missing_facts_requires_automation_client(logged_in_client):
+    response = logged_in_client.get("/api/jobs/catalog/missing-facts", params={"schema_version": 3})
+    assert response.status_code == 403
+
+
+def test_catalog_missing_facts_contains_shared_only_job(logged_in_client, user, monkeypatch):
+    monkeypatch.setattr("deps.JOBAGENT_API_KEY", "catalog-test-key")
+    monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", str(user["id"]))
+    headers = {"X-JobAgent-Api-Key": "catalog-test-key"}
+    created = logged_in_client.post(
+        "/api/jobs/catalog",
+        headers=headers,
+        json={
+            "title": "Remote QA Engineer",
+            "company": "Acme",
+            "location": "Worldwide (Remote)",
+            "url": "https://example.com/jobs/catalog-facts",
+            "source": "greenhouse",
+            "description": "Automate browser tests with Playwright from anywhere.",
+            "source_structured_data": {"remote": True, "remote_regions": ["Worldwide"]},
+        },
+    ).json()
+
+    pending = logged_in_client.get(
+        "/api/jobs/catalog/missing-facts",
+        headers=headers,
+        params={"schema_version": 3},
+    )
+
+    assert pending.status_code == 200
+    assert created["job_id"] in {job["id"] for job in pending.json()}
+
+
 def test_update_score_and_status(logged_in_client):
     job_id = _create(logged_in_client)["job_id"]
     resp = logged_in_client.patch(f"/api/jobs/{job_id}/score-and-status", json={

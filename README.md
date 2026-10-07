@@ -4,7 +4,7 @@ The multi-tenant backend for [JobAgent](https://github.com/BaranskiTomasz/JobAge
 
 The companion collector currently supplies jobs from LinkedIn; international remote boards including Remotive, Remote OK, Working Nomads, We Work Remotely, Himalayas, Jobicy, JobsCollider, and Arbeitnow; direct company boards hosted by Greenhouse, Lever, and Ashby; Hacker News “Who is hiring?”; and the Poland-focused justjoin.it, theprotocol.it, it.pracuj.pl, NoFluffJobs, and SOLID.Jobs. JobAgentWeb stores each source identifier and exposes its display name in dashboard filters.
 
-Visitors can browse the shared catalog without an account at `/jobs/{technology}` for PHP, Python, Node.js, React, Angular, and QA. The country selector exposes only remote postings with evidence that work is possible from Poland or Bulgaria. Public responses contain posting facts and source links, never user scores, ranking, CV data, preferences, or application state. A logged-in visitor can attach the current technology/country catalog slice to their account without recollecting it; this creates `user_job_states` for the existing shared `job_postings`.
+Visitors land directly on the shared catalog and can browse `/jobs/{technology}` for PHP, Python, Node.js, React, Angular, and QA. The country selector exposes only full-remote postings with evidence that work is possible from Poland or Bulgaria. Search, source, seniority, employer/skill badges, sorting, and expandable descriptions work without an account. Public responses contain objective posting facts and source links, never user scores, ranking, CV data, preferences, or application state. A logged-in visitor can attach the current technology/country catalog slice to their account without recollecting it; this creates `user_job_states` for the existing shared `job_postings`.
 
 Incoming postings are deduplicated across sources using canonical URLs, stable source requisition IDs, exact content fingerprints, and a conservative company/title plus description-similarity check. Matching runs again after descriptions and extracted facts arrive. High-confidence matches are merged transactionally, uncertain pairs remain reviewable candidates, and every decision is retained with its method, confidence, and evidence. Every original source URL remains available as an alias of the canonical posting. Per-user AI scores and rankings carry input fingerprints so clients can detect and replace stale results.
 
@@ -79,6 +79,30 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 
 Visit `http://localhost:8000` — first-time visitors are redirected to `/login`, with a link to `/register`.
 
+### Connect a local JobAgent
+
+JobAgentWeb owns the database; a local JobAgent must connect through HTTP and must not receive PostgreSQL credentials. Configure the server-side automation identity in JobAgentWeb:
+
+```dotenv
+JOBAGENT_API_KEY=<random-secret>
+JOBAGENT_API_KEY_USER_ID=<target-user-id>
+```
+
+Configure the matching client values in JobAgent's `.env`:
+
+```dotenv
+JOBAGENTWEB_BASE_URL=https://your-jobagentweb.example
+JOBAGENT_API_KEY=<same-random-secret>
+```
+
+If the API is reachable only through WireGuard or another private network, use that private URL instead. Without a static API key, run `python scripts/login.py` in JobAgent and use the stored session cookie. Personal collection, including LinkedIn, still contributes objective posting data to the shared pool; only evaluation, ranking, and decisions remain user-specific.
+
+Verify connectivity before starting a local pipeline:
+
+```bash
+curl -fsS "$JOBAGENTWEB_BASE_URL/healthz"
+```
+
 ---
 
 ## API surface
@@ -102,6 +126,7 @@ All JSON endpoints live under `/api/*` and require a session cookie (`deps.get_c
 | `embeddings` | `/api/embeddings` | Shared vector storage + retrieval |
 | `evaluation` | `/api/eval` | Precision@K, divergence cases, would-apply precision — JobAgent proxies this rather than recomputing it |
 | `public-jobs` | `/api/public/jobs` | Logged-out technology/country catalog and authenticated attachment to a user's personal pool |
+| `jobs` catalog automation | `/api/jobs/catalog/*` | API-key-only shared collection, description enrichment, fact extraction queue, and global URL deduplication |
 | `sources` | `/api/sources` | Distinct job sources for *this user's* pool, for the dashboard's source filter dropdown |
 
 Every per-user router scopes its queries by `user_id` from the session — there is no endpoint that returns another user's `user_job_states`-backed data. `job_postings`/`job_embeddings` reads are shared by design (any authenticated user can see the same posting), never keyed by ownership.
@@ -118,6 +143,28 @@ The reference deployment runs on a single VPS: this app under `uvicorn` (systemd
 Provisioning scripts (`bootstrap.sh`, `postgres_setup.sql`, `Caddyfile`, `jobagentweb.service`, `.env` example, WireGuard configs) live in the **JobAgent** repo's `deploy/` directory, not here — this app predates the split into its own repo, and deployment assets were never moved over. Follow that repo's `deploy/bootstrap.sh` for a fresh VPS setup; it clones this repo (`JobAgentWeb.git`) to `/opt/jobagentweb` and installs the matching systemd unit.
 
 Opening registration to the public beyond the current private/invite-only setup — and how (open vs. invite codes) — is a deliberate decision to make explicitly when the time comes, not a default to fall into.
+
+### Cross-source deduplication operations
+
+New postings are checked during insertion and again after their description or extracted facts change. Only stable source requisition identity is eligible for automatic merging. Exact or highly similar cross-source content without that identity is stored as a review candidate, avoiding destructive merges of separate requisitions that reuse one description template.
+
+For existing data, inspect the previous 21 days without writing anything:
+
+```bash
+cd /opt/jobagentweb
+set -a
+. ./.env
+set +a
+.venv/bin/python scripts/deduplicate_recent.py --days 21
+```
+
+Apply the same analysis only after reviewing the dry-run counts and taking a current backup:
+
+```bash
+.venv/bin/python scripts/deduplicate_recent.py --days 21 --apply
+```
+
+Dry-run mode rolls back fingerprint refreshes, candidate decisions, and merges. Apply mode records uncertain pairs in `job_dedup_matches`; automatic merges preserve source URLs in `job_posting_aliases` and move shared and per-user child records transactionally to the selected survivor. The audit table deliberately retains the original pair identifiers after a merge, even though the duplicate posting row no longer exists.
 
 ---
 

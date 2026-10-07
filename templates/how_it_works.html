@@ -22,10 +22,12 @@
       <nav class="nav-menu-panel">
         {% if user %}
         <a href="/">Dashboard</a>
+        <a href="/jobs">Browse jobs</a>
         <a href="/preferences">Preferences</a>
         <a href="/how-it-works">How it works</a>
         {% if user.is_admin %}<a href="/admin">Admin</a>{% endif %}
         {% else %}
+        <a href="/jobs">Browse jobs</a>
         <a href="/how-it-works">How it works</a>
         <a href="/login">Log in</a>
         <a href="/register">Register</a>

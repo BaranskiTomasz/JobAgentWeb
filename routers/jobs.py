@@ -175,6 +175,24 @@ def delete_by_filter(
     return {"deleted": jobs_repo.delete_by_filter(conn, user["id"], status, date_from, date_to)}
 
 
+@router.get("/catalog/missing-facts")
+def catalog_missing_facts(
+    schema_version: int,
+    limit: int = Query(200, ge=1, le=2000),
+    max_age_days: int = Query(14, ge=1, le=90),
+    user: dict = Depends(require_automation_client),
+    conn=Depends(get_db),
+):
+    return jobs_repo.get_shared_missing_facts(conn, schema_version, limit, max_age_days)
+
+
+@router.get("/catalog/urls")
+def catalog_urls(
+    user: dict = Depends(require_automation_client), conn=Depends(get_db),
+):
+    return {"urls": list(jobs_repo.get_all_shared_urls(conn))}
+
+
 @router.get("/{job_id}", response_model=JobOut)
 def get_job(job_id: str, user: dict = Depends(get_current_user), conn=Depends(get_db)):
     return _get_or_404(conn, user["id"], job_id)
@@ -190,6 +208,34 @@ def get_job_aliases(job_id: str, user: dict = Depends(get_current_user), conn=De
 def create_job(job: JobCreate, user: dict = Depends(get_current_user), conn=Depends(get_db)):
     result = jobs_repo.insert(conn, user["id"], job.model_dump())
     return JobCreateResult(**result)
+
+
+@router.post("/catalog", response_model=JobCreateResult)
+def create_catalog_job(
+    job: JobCreate, user: dict = Depends(require_automation_client), conn=Depends(get_db),
+):
+    result = jobs_repo.insert(conn, None, job.model_dump(), attach_to_user=False)
+    return JobCreateResult(**result)
+
+
+@router.patch("/catalog/{job_id}/description")
+def update_catalog_description(
+    job_id: str, body: JobDescriptionUpdate,
+    user: dict = Depends(require_automation_client), conn=Depends(get_db),
+):
+    survivor_id = jobs_repo.update_description(conn, job_id, body.description)
+    return {"id": survivor_id}
+
+
+@router.put("/catalog/{job_id}/facts")
+def update_catalog_facts(
+    job_id: str, body: JobFactsUpdate,
+    user: dict = Depends(require_automation_client), conn=Depends(get_db),
+):
+    survivor_id = jobs_repo.update_facts(
+        conn, job_id, body.schema_version, body.model, body.content_hash, body.facts, body.provenance,
+    )
+    return {"ok": True, "job_id": survivor_id}
 
 
 @router.patch("/{job_id}/status", response_model=JobOut)

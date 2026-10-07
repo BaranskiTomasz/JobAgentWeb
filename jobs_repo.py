@@ -166,7 +166,7 @@ def _row_to_job(row: dict) -> dict:
     return row
 
 
-def insert(conn, user_id: int, job: dict) -> dict:
+def insert(conn, user_id: int | None, job: dict, *, attach_to_user: bool = True) -> dict:
     # job_id is None only if this user already has a state for this posting.
     # posting_created=False tells the caller the posting was already known
     # (from another user), so it can skip re-fetching/re-extracting.
@@ -223,18 +223,21 @@ def insert(conn, user_id: int, job: dict) -> dict:
          json.dumps(alias_metadata, ensure_ascii=False)),
     )
 
-    cur.execute(
-        "INSERT INTO user_job_states (user_id, job_id) VALUES (%s, %s) ON CONFLICT (user_id, job_id) DO NOTHING RETURNING id",
-        (user_id, job_id),
-    )
-    state_created = cur.fetchone() is not None
-    if not state_created:
+    if attach_to_user:
+        cur.execute(
+            "INSERT INTO user_job_states (user_id, job_id) VALUES (%s, %s) ON CONFLICT (user_id, job_id) DO NOTHING RETURNING id",
+            (user_id, job_id),
+        )
+        state_created = cur.fetchone() is not None
+        if not state_created:
+            return {"job_id": None, "posting_created": False}
+    elif not posting_created:
         return {"job_id": None, "posting_created": False}
 
     if posting_created and job.get("description"):
         dedup = _run_late_dedup(conn, job_id)
         if dedup["survivor_job_id"] != job_id:
-            if any(user_id in merge["overlapping_user_ids"] for merge in dedup["merges"]):
+            if attach_to_user and any(user_id in merge["overlapping_user_ids"] for merge in dedup["merges"]):
                 return {"job_id": None, "posting_created": False}
             job_id = dedup["survivor_job_id"]
             posting_created = False
@@ -466,6 +469,16 @@ def get_all_urls(conn, user_id: int) -> set[str]:
     return {r["url"] for r in cur.fetchall()}
 
 
+def get_all_shared_urls(conn) -> set[str]:
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT url FROM job_postings WHERE url IS NOT NULL
+           UNION
+           SELECT url FROM job_posting_aliases WHERE url IS NOT NULL"""
+    )
+    return {row[0] for row in cur.fetchall()}
+
+
 def get_missing_descriptions(conn, user_id: int) -> list[dict]:
     cur = dict_cursor(conn)
     cur.execute(
@@ -505,6 +518,45 @@ def get_missing_facts(
         (user_id, schema_version, max_age_days, limit),
     )
     return [_row_to_job(r) for r in cur.fetchall()]
+
+
+def get_shared_missing_facts(
+    conn, schema_version: int, limit: int, max_age_days: int = 14,
+) -> list[dict]:
+    cur = dict_cursor(conn)
+    cur.execute(
+        """SELECT jp.*
+             FROM job_postings jp
+             LEFT JOIN job_fact_extractions jfe ON jfe.job_id = jp.id
+            WHERE jp.description IS NOT NULL AND jp.description != ''
+              AND (jfe.job_id IS NULL OR jfe.schema_version < %s)
+              AND COALESCE(jp.posted_at, jp.created_at) >= CURRENT_TIMESTAMP - (%s * INTERVAL '1 day')
+            ORDER BY jp.created_at DESC
+            LIMIT %s""",
+        (schema_version, max_age_days, limit),
+    )
+    result = []
+    for row in cur.fetchall():
+        job = dict(row)
+        job.setdefault("status", "new")
+        job.setdefault("score", None)
+        job.setdefault("score_reason", None)
+        job.setdefault("score_breakdown", None)
+        job.setdefault("score_fingerprint", None)
+        job.setdefault("rejection_reason", None)
+        job.setdefault("embedding_score", None)
+        job.setdefault("rerank_score", None)
+        job.setdefault("listwise_rank", None)
+        job.setdefault("rank_reason", None)
+        job.setdefault("debate_flag", None)
+        job.setdefault("debate_note", None)
+        job.setdefault("ranking_fingerprint", None)
+        job.setdefault("would_apply", None)
+        job.setdefault("would_apply_reason", None)
+        job.setdefault("company_total_count", 1)
+        job.setdefault("company_applied_count", 0)
+        result.append(_row_to_job(job))
+    return result
 
 
 def update_facts(

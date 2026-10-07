@@ -1,13 +1,12 @@
 class TestRootRouteAnonymous:
-    def test_anonymous_visitor_sees_public_landing_not_a_login_bounce(self, client):
-        # Regression: a logged-out visitor's first contact used to be an
-        # immediate redirect to /login with no explanation of the product at all.
+    def test_anonymous_visitor_sees_jobs_not_a_login_bounce(self, client):
         resp = client.get("/", follow_redirects=False)
         assert resp.status_code == 200
-        assert "Register" in resp.text
+        assert "Python jobs" in resp.text
+        assert "Create account" in resp.text
         assert "Log in" in resp.text
 
-    def test_anonymous_landing_links_to_register_and_how_it_works(self, client):
+    def test_anonymous_catalog_links_to_register_and_how_it_works(self, client):
         resp = client.get("/")
         assert 'href="/register"' in resp.text
         assert 'href="/how-it-works"' in resp.text
