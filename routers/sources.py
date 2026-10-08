@@ -13,7 +13,7 @@ _DISPLAY_NAMES = {
     "weworkremotely": "We Work Remotely",
     "himalayas":      "Himalayas",
     "jobicy":         "Jobicy",
-    "jobscollider":   "JobsCollider",
+    "jobscollider":   "Remote First Jobs",
     "arbeitnow":      "Arbeitnow Europe",
     "arbeitnow_uk":   "Arbeitnow UK",
     "greenhouse":     "Greenhouse",

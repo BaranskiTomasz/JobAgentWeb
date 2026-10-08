@@ -107,10 +107,11 @@
       <p class="intro-detail">Listings from the last 14 days are normalized into one consistent view. When the same role appears in more than one source, JobAgent merges it into a single listing while preserving its source links. You can filter the catalog using details extracted from the job description, including technology, seniority, engagement type and compensation.</p>
       <p class="intro-detail">The personal agent and browser automation run on your own computer under your control—not as a hosted bot on this website. Shared job data and your private results are stored by JobAgentWeb, while configured AI providers process the content needed for extraction and ranking. See the <a href="/how-it-works#technical">technical process and requirements</a>.</p>
       <div class="source-cloud" aria-label="Job sources">
-        {% for image, name in [('linkedin.ico','LinkedIn'),('remotive.ico','Remotive'),('jobicy.ico','Jobicy'),('himalayas.ico','Himalayas'),('arbeitnow.png','Arbeitnow'),('workingnomads.ico','Working Nomads'),('justjoin.png','Just Join IT'),('nofluffjobs.ico','No Fluff Jobs'),('solidjobs.ico','SolidJobs'),('jobscollider.ico','JobsCollider'),('theprotocol.ico','theprotocol.it'),('greenhouse.png','Greenhouse'),('lever.png','Lever'),('ashby.png','Ashby'),('hackernews.svg','Hacker News')] %}
+        {% for image, name in [('linkedin.ico','LinkedIn'),('remotive.ico','Remotive'),('jobicy.ico','Jobicy'),('himalayas.ico','Himalayas'),('arbeitnow.png','Arbeitnow'),('workingnomads.ico','Working Nomads'),('justjoin.png','Just Join IT'),('nofluffjobs.ico','No Fluff Jobs'),('solidjobs.ico','SolidJobs'),('theprotocol.ico','theprotocol.it'),('greenhouse.png','Greenhouse'),('lever.png','Lever'),('ashby.png','Ashby'),('hackernews.svg','Hacker News')] %}
         <span class="source-logo"><img src="/static/source-logos/{{ image }}" alt="" width="25" height="25">{{ name }}</span>
         {% endfor %}
         <span class="source-logo">Remote OK</span>
+        <span class="source-logo">Remote First Jobs</span>
         <span class="source-logo">We Work Remotely</span>
       </div>
       <p class="source-note">Source names and logos belong to their respective owners.</p>
