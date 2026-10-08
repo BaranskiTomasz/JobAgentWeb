@@ -69,6 +69,7 @@ class PublicJobOut(BaseModel):
     posted_at: datetime | None
     created_at: datetime
     technologies: list[str]
+    role_families: list[str]
     work_countries: list[str]
     eligibility_confidence: str
     excerpt: str | None
@@ -87,7 +88,11 @@ class PublicJobSearchOut(BaseModel):
 
 
 class CatalogImport(BaseModel):
-    technology: Literal["php", "python", "nodejs", "react", "angular", "qa"]
+    technology: Literal[
+        "php", "python", "nodejs", "react", "angular", "qa", "java", "dotnet", "go",
+        "software-engineering", "backend", "frontend", "fullstack", "mobile", "devops",
+        "data", "ml-ai",
+    ]
     country: Literal["PL", "BG"]
 
 
@@ -247,6 +252,13 @@ class SearchStatRecord(BaseModel):
     query_matched: int | None = None
     date_matched: int | None = None
     geo_matched: int | None = None
+    source_returned: int | None = None
+    known_url_filtered: int | None = None
+    global_matched: int | None = None
+    duplicate_found: int = 0
+    inserted_found: int | None = None
+    source_status: Literal["ok", "empty", "partial", "error"] = "ok"
+    source_error: str | None = None
 
 
 # Sessions

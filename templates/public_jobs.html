@@ -50,7 +50,7 @@
   <div class="filter-bar" id="catalog-filter-bar"><span class="fb-label">Active filters:</span><span id="catalog-filter-chips"></span></div>
 
   <nav class="technology-tabs" aria-label="Job categories">
-    {% for slug, label in [('php','PHP'),('python','Python'),('nodejs','Node.js'),('react','React'),('angular','Angular'),('qa','QA')] %}
+    {% for slug, label in catalog_categories %}
     <a href="/jobs/{{ slug }}" class="{{ 'active' if technology == slug else '' }}">{{ label }} <span data-facet="{{ slug }}"></span></a>
     {% endfor %}
   </nav>

@@ -1,7 +1,16 @@
 from db import dict_cursor
 
 
-TECHNOLOGIES = ("php", "python", "nodejs", "react", "angular", "qa")
+TECHNOLOGIES = ("php", "python", "nodejs", "react", "angular", "qa", "java", "dotnet", "go")
+ROLE_FAMILIES = ("software-engineering", "backend", "frontend", "fullstack", "mobile", "devops", "data", "ml-ai")
+CATEGORIES = TECHNOLOGIES + ROLE_FAMILIES
+CATEGORY_LABELS = {
+    "php": "PHP", "python": "Python", "nodejs": "Node.js", "react": "React",
+    "angular": "Angular", "qa": "QA", "java": "Java", "dotnet": ".NET", "go": "Go",
+    "software-engineering": "Software Engineering", "backend": "Backend",
+    "frontend": "Frontend", "fullstack": "Full Stack", "mobile": "Mobile",
+    "devops": "DevOps / Platform", "data": "Data Engineering", "ml-ai": "ML / AI",
+}
 COUNTRIES = ("PL", "BG")
 PUBLIC_CATALOG_MAX_AGE_DAYS = 14
 
@@ -11,7 +20,7 @@ _PUBLIC_JOB_SELECT = """SELECT jp.id, jp.title, jp.company, jp.location,
                    FILTER (WHERE jpa.url IS NOT NULL))[1],
                   jp.url
               ) AS url,
-              jp.source, jp.posted_at, jp.created_at, jcm.technologies, jcm.work_countries,
+              jp.source, jp.posted_at, jp.created_at, jcm.technologies, jcm.role_families, jcm.work_countries,
               jcm.eligibility_confidence,
               LEFT(REGEXP_REPLACE(jp.description, '\\s+', ' ', 'g'), 320) AS excerpt,
               jp.description, jfe.facts AS structured_data, jfe.extracted_at,
@@ -41,13 +50,13 @@ def list_jobs(conn, technology: str, country: str, limit: int = 30, offset: int 
     cur.execute(
         f"""{_PUBLIC_JOB_SELECT}
            WHERE jcm.is_public = TRUE
-             AND %s = ANY(jcm.technologies)
+             AND (%s = ANY(jcm.technologies) OR %s = ANY(jcm.role_families))
              AND %s = ANY(jcm.work_countries)
              AND COALESCE(jp.posted_at, jp.created_at) >= {freshness}
            {_PUBLIC_JOB_GROUP}
            ORDER BY COALESCE(jp.posted_at, jp.created_at) DESC, jp.id
            LIMIT %s OFFSET %s""",
-        (country, technology, country, limit, offset),
+        (country, technology, technology, country, limit, offset),
     )
     return [dict(row) for row in cur.fetchall()]
 
@@ -68,11 +77,11 @@ def search_jobs(
     freshness = _freshness_clause()
     conditions = [
         "jcm.is_public = TRUE",
-        "%s = ANY(jcm.technologies)",
+        "(%s = ANY(jcm.technologies) OR %s = ANY(jcm.role_families))",
         "%s = ANY(jcm.work_countries)",
         f"COALESCE(jp.posted_at, jp.created_at) >= {freshness}",
     ]
-    params: list = [technology, country]
+    params: list = [technology, technology, country]
 
     if query:
         conditions.append("(jp.title ILIKE %s OR jp.company ILIKE %s OR jp.description ILIKE %s OR jfe.facts->>'summary' ILIKE %s)")
@@ -176,11 +185,11 @@ def filter_options(conn, technology: str, country: str) -> dict:
     cur = dict_cursor(conn)
     cur.execute(
         f"""SELECT
-            ARRAY(SELECT DISTINCT COALESCE(a.source, p.source) FROM job_catalog_metadata m JOIN job_postings p ON p.id = m.job_id LEFT JOIN job_posting_aliases a ON a.job_id = p.id WHERE m.is_public AND %s = ANY(m.technologies) AND %s = ANY(m.work_countries) AND COALESCE(p.posted_at, p.created_at) >= {freshness} AND COALESCE(a.source, p.source) IS NOT NULL ORDER BY 1) AS sources,
-            ARRAY(SELECT DISTINCT p.company FROM job_catalog_metadata m JOIN job_postings p ON p.id = m.job_id WHERE m.is_public AND %s = ANY(m.technologies) AND %s = ANY(m.work_countries) AND COALESCE(p.posted_at, p.created_at) >= {freshness} AND p.company IS NOT NULL ORDER BY 1) AS companies,
-            ARRAY(SELECT DISTINCT s.canonical_name FROM job_catalog_metadata m JOIN job_postings p ON p.id = m.job_id JOIN job_skills s ON s.job_id = p.id WHERE m.is_public AND %s = ANY(m.technologies) AND %s = ANY(m.work_countries) AND COALESCE(p.posted_at, p.created_at) >= {freshness} ORDER BY 1) AS skills,
-            ARRAY(SELECT DISTINCT f.facts->>'industry' FROM job_catalog_metadata m JOIN job_postings p ON p.id = m.job_id JOIN job_fact_extractions f ON f.job_id = p.id WHERE m.is_public AND %s = ANY(m.technologies) AND %s = ANY(m.work_countries) AND COALESCE(p.posted_at, p.created_at) >= {freshness} AND NULLIF(f.facts->>'industry', '') IS NOT NULL ORDER BY 1) AS industries""",
-        [technology, country] * 4,
+            ARRAY(SELECT DISTINCT COALESCE(a.source, p.source) FROM job_catalog_metadata m JOIN job_postings p ON p.id = m.job_id LEFT JOIN job_posting_aliases a ON a.job_id = p.id WHERE m.is_public AND (%s = ANY(m.technologies) OR %s = ANY(m.role_families)) AND %s = ANY(m.work_countries) AND COALESCE(p.posted_at, p.created_at) >= {freshness} AND COALESCE(a.source, p.source) IS NOT NULL ORDER BY 1) AS sources,
+            ARRAY(SELECT DISTINCT p.company FROM job_catalog_metadata m JOIN job_postings p ON p.id = m.job_id WHERE m.is_public AND (%s = ANY(m.technologies) OR %s = ANY(m.role_families)) AND %s = ANY(m.work_countries) AND COALESCE(p.posted_at, p.created_at) >= {freshness} AND p.company IS NOT NULL ORDER BY 1) AS companies,
+            ARRAY(SELECT DISTINCT s.canonical_name FROM job_catalog_metadata m JOIN job_postings p ON p.id = m.job_id JOIN job_skills s ON s.job_id = p.id WHERE m.is_public AND (%s = ANY(m.technologies) OR %s = ANY(m.role_families)) AND %s = ANY(m.work_countries) AND COALESCE(p.posted_at, p.created_at) >= {freshness} ORDER BY 1) AS skills,
+            ARRAY(SELECT DISTINCT f.facts->>'industry' FROM job_catalog_metadata m JOIN job_postings p ON p.id = m.job_id JOIN job_fact_extractions f ON f.job_id = p.id WHERE m.is_public AND (%s = ANY(m.technologies) OR %s = ANY(m.role_families)) AND %s = ANY(m.work_countries) AND COALESCE(p.posted_at, p.created_at) >= {freshness} AND NULLIF(f.facts->>'industry', '') IS NOT NULL ORDER BY 1) AS industries""",
+        [value for _ in range(4) for value in (technology, technology, country)],
     )
     row = dict(cur.fetchone())
     return {key: value or [] for key, value in row.items()}
@@ -194,10 +203,10 @@ def count_jobs(conn, technology: str, country: str) -> int:
            FROM job_catalog_metadata jcm
            JOIN job_postings jp ON jp.id = jcm.job_id
            WHERE jcm.is_public = TRUE
-             AND %s = ANY(jcm.technologies)
+             AND (%s = ANY(jcm.technologies) OR %s = ANY(jcm.role_families))
              AND %s = ANY(jcm.work_countries)
              AND COALESCE(jp.posted_at, jp.created_at) >= {freshness}""",
-        (technology, country),
+        (technology, technology, country),
     )
     return cur.fetchone()[0]
 
@@ -205,7 +214,7 @@ def count_jobs(conn, technology: str, country: str) -> int:
 def facets(conn, country: str) -> dict[str, int]:
     cur = conn.cursor()
     counts = {}
-    for technology in TECHNOLOGIES:
+    for technology in CATEGORIES:
         counts[technology] = count_jobs(conn, technology, country)
     return counts
 
@@ -219,10 +228,10 @@ def attach_to_user(conn, user_id: int, technology: str, country: str) -> int:
            FROM job_catalog_metadata jcm
            JOIN job_postings jp ON jp.id = jcm.job_id
            WHERE jcm.is_public = TRUE
-             AND %s = ANY(jcm.technologies)
+             AND (%s = ANY(jcm.technologies) OR %s = ANY(jcm.role_families))
              AND %s = ANY(jcm.work_countries)
              AND COALESCE(jp.posted_at, jp.created_at) >= {freshness}
            ON CONFLICT (user_id, job_id) DO NOTHING""",
-        (user_id, technology, country),
+        (user_id, technology, technology, country),
     )
     return cur.rowcount

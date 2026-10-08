@@ -144,6 +144,96 @@ def test_classifier_requires_explicit_full_remote_signal():
     assert result["is_public"] is False
 
 
+def test_classifier_maps_general_software_role_and_new_technologies():
+    result = classify_catalog_job({
+        "title": "Senior Software Engineer",
+        "description": "Build payment services for customers across Europe.",
+        "location": "Europe (Remote)",
+        "source_structured_data": {"remote_available": True, "remote_regions": ["Europe"]},
+        "structured_data": {
+            "remote_available": True,
+            "office_presence_required": False,
+            "role_family": "backend",
+            "stack": ["java", "react"],
+            "skills": [
+                {"canonical_name": "java", "importance": "core"},
+                {"canonical_name": "react", "importance": "incidental"},
+            ],
+        },
+    })
+    assert result["technologies"] == ["java"]
+    assert result["role_families"] == ["backend", "software-engineering"]
+    assert result["is_public"] is True
+
+
+def test_classifier_does_not_use_discovery_query_as_category():
+    result = classify_catalog_job({
+        "title": "Senior Data Analyst",
+        "search_query": "Python Developer",
+        "description": "Analyse commercial data using SQL.",
+        "location": "Europe (Remote)",
+        "source_structured_data": {"remote": True, "remote_regions": ["Europe"]},
+        "structured_data": {"remote": True, "skills": []},
+    })
+    assert result["technologies"] == []
+    assert result["is_public"] is False
+
+
+def test_classifier_allows_optional_hybrid_when_full_remote_is_explicit():
+    result = classify_catalog_job({
+        "title": "Python Software Engineer",
+        "description": "Remote-first role with an optional office in Warsaw.",
+        "location": "Warsaw, Poland (Hybrid)",
+        "structured_data": {
+            "remote_available": True,
+            "hybrid_available": True,
+            "office_presence_required": False,
+            "country_eligibility": [{"country_code": "PL", "eligible": True}],
+        },
+    })
+    assert result["work_countries"] == ["PL"]
+    assert result["is_public"] is True
+
+
+def test_classifier_does_not_treat_unknown_country_eligibility_as_denial():
+    result = classify_catalog_job({
+        "title": "Go Backend Engineer",
+        "description": "Remote role across Europe.",
+        "location": "Europe (Remote)",
+        "structured_data": {
+            "remote_available": True,
+            "office_presence_required": False,
+            "country_eligibility": [{"country_code": "PL", "eligible": None}],
+        },
+    })
+    assert result["work_countries"] == ["BG", "PL"]
+    assert result["is_public"] is True
+
+
+def test_classifier_publishes_role_family_without_named_technology():
+    result = classify_catalog_job({
+        "title": "Senior Software Engineer",
+        "description": "Develop a distributed product for a global team.",
+        "location": "Worldwide (Remote)",
+        "structured_data": {"remote_available": True, "office_presence_required": False},
+    })
+    assert result["technologies"] == []
+    assert result["role_families"] == ["software-engineering"]
+    assert result["is_public"] is True
+
+
+def test_classifier_honours_explicit_remote_unavailability():
+    result = classify_catalog_job({
+        "title": "Java Software Engineer",
+        "description": "The team works worldwide.",
+        "location": "Worldwide (Fully Remote)",
+        "source_structured_data": {"remote": True, "remote_regions": ["Worldwide"]},
+        "structured_data": {"remote_available": False},
+    })
+    assert result["work_countries"] == []
+    assert result["is_public"] is False
+
+
 def test_public_catalog_is_available_without_account(client, logged_in_client):
     job_id = _create_catalog_job(logged_in_client)
     response = client.get("/api/public/jobs", params={"technology": "python", "country": "PL"})

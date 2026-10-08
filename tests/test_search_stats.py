@@ -50,3 +50,27 @@ def test_isolated_per_user(logged_in_client, other_logged_in_client):
         "source": "linkedin", "search_query": "q", "location": "Poland", "cards_found": 1, "new_found": 1,
     })
     assert other_logged_in_client.get("/api/search-stats/summary", params={"source": "linkedin"}).json() == []
+
+
+def test_records_detailed_funnel_and_source_health(logged_in_client):
+    response = logged_in_client.post("/api/search-stats", json={
+        "source": "jobscollider", "search_query": "Python", "location": "Poland",
+        "cards_found": 4, "new_found": 2, "upstream_found": 100,
+        "query_matched": 40, "date_matched": 20, "geo_matched": 10,
+        "source_returned": 6, "known_url_filtered": 4,
+        "global_matched": 4, "duplicate_found": 2,
+        "inserted_found": 2, "source_status": "partial", "source_error": "page 3 failed",
+    })
+    assert response.status_code == 200
+
+    row = logged_in_client.get(
+        "/api/search-stats/summary", params={"source": "jobscollider"},
+    ).json()[0]
+    assert row["upstream_found"] == 100
+    assert row["source_returned"] == 6
+    assert row["known_url_filtered"] == 4
+    assert row["global_matched"] == 4
+    assert row["duplicate_found"] == 2
+    assert row["inserted_found"] == 2
+    assert row["partial_searches"] == 1
+    assert row["error_searches"] == 0

@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 import jobs_repo
+import catalog_repo
 import migrations
 import users_repo
 from config import SECRET_KEY, SESSION_HTTPS_ONLY
@@ -74,6 +75,7 @@ def dashboard(request: Request, view: str | None = None, conn=Depends(get_db)):
             "user": None,
             "technology": "python",
             "technology_label": "Python",
+            "catalog_categories": catalog_repo.CATEGORY_LABELS.items(),
         })
     stats = jobs_repo.get_stats(conn, user["id"])
     if stats["total"] == 0 and view != "dashboard":
@@ -91,7 +93,7 @@ def how_it_works(request: Request, conn=Depends(get_db)):
 @app.get("/jobs", response_class=HTMLResponse)
 @app.get("/jobs/{technology}", response_class=HTMLResponse)
 def public_jobs_page(request: Request, technology: str = "python", conn=Depends(get_db)):
-    labels = {"php": "PHP", "python": "Python", "nodejs": "Node.js", "react": "React", "angular": "Angular", "qa": "QA"}
+    labels = catalog_repo.CATEGORY_LABELS
     if technology not in labels:
         return RedirectResponse("/jobs/python", status_code=303)
     return templates.TemplateResponse(
@@ -99,6 +101,7 @@ def public_jobs_page(request: Request, technology: str = "python", conn=Depends(
             "user": _require_user(request, conn),
             "technology": technology,
             "technology_label": labels[technology],
+            "catalog_categories": labels.items(),
         },
     )
 

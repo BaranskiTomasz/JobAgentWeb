@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/public/jobs", tags=["public-jobs"])
 def _validate(technology: str, country: str) -> tuple[str, str]:
     technology = technology.lower()
     country = country.upper()
-    if technology not in catalog_repo.TECHNOLOGIES:
+    if technology not in catalog_repo.CATEGORIES:
         raise HTTPException(status_code=422, detail="Unsupported technology")
     if country not in catalog_repo.COUNTRIES:
         raise HTTPException(status_code=422, detail="Unsupported work country")

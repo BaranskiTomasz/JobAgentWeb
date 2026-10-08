@@ -10,6 +10,9 @@ TECHNOLOGY_PATTERNS = {
     "nodejs": (r"\bnode(?:\.js|js)?\b", r"\bnestjs\b", r"\bexpress(?:\.js|js)?\b"),
     "react": (r"\breact(?:\.js|js)?\b", r"\bnext(?:\.js|js)?\b"),
     "angular": (r"\bangular\b",),
+    "java": (r"\bjava\b", r"\bspring(?: boot)?\b"),
+    "dotnet": (r"\.net\b", r"\bdotnet\b", r"\bc#(?=\W|$)", r"\basp\.net\b"),
+    "go": (r"\bgolang\b", r"\bgo\b(?=.{0,30}\b(?:back[ -]?end|software|developer|engineer)\b)"),
     "qa": (
         r"\bqa\b",
         r"\bquality assurance\b",
@@ -21,24 +24,34 @@ TECHNOLOGY_PATTERNS = {
     ),
 }
 
+ROLE_FAMILY_PATTERNS = {
+    "software-engineering": (
+        r"\bsoftware (?:developer|engineer)\b",
+        r"\bapplication developer\b",
+        r"\bproduct engineer\b",
+        r"\b(?:php|python|java|golang|go|dotnet|node(?:\.js|js)?|react(?:\.js|js)?|angular) (?:developer|engineer)\b",
+    ),
+    "backend": (r"\bback[ -]?end (?:developer|engineer)\b",),
+    "frontend": (r"\bfront[ -]?end (?:developer|engineer)\b", r"\bweb developer\b"),
+    "fullstack": (r"\bfull[ -]?stack (?:developer|engineer)\b",),
+    "qa": TECHNOLOGY_PATTERNS["qa"],
+    "mobile": (r"\bmobile (?:developer|engineer)\b", r"\bandroid developer\b", r"\bios developer\b"),
+    "devops": (r"\bdevops\b", r"\bsite reliability engineer\b", r"\bplatform engineer\b"),
+    "data": (r"\bdata engineer\b",),
+    "ml-ai": (r"\bmachine learning engineer\b", r"\bai engineer\b", r"\bml engineer\b"),
+}
+
 COUNTRY_NAMES = {"PL": ("poland", "polska"), "BG": ("bulgaria", "bułgaria", "bulgariya")}
 REGIONAL_MARKERS = ("worldwide", "anywhere", "global", "europe", "european", "emea", "eea", "eu-only", "eu only")
 # Bump this whenever the public-catalog qualification rules change.  The
 # migration backfill re-runs the classifier for rows carrying an older value.
-CLASSIFIER_VERSION = 3
+CLASSIFIER_VERSION = 4
 
-# A public catalog item must be unambiguously full-remote.  In particular, a
-# source may advertise both remote and hybrid work; that is useful to a
-# personal search, but it is not a full-remote catalog result.
-NON_FULL_REMOTE_LOCATION_MARKERS = (
-    "hybrid", "hybryd", "on-site", "onsite", "on site", "office-based", "office based",
-)
 NON_FULL_REMOTE_DESCRIPTION_PATTERNS = (
-    r"\bhybrid\s+(?:work|working|role|model|position|schedule)\b",
-    r"\b(?:work|working)\s+(?:in|from)\s+(?:the\s+)?office\b",
     r"\b(?:required|mandatory)\s+(?:office|onsite|on-site)\b",
+    r"\boffice (?:presence|attendance)\s+(?:is\s+)?(?:required|mandatory)\b",
+    r"\b(?:required|expected)\s+to\s+(?:work|attend)[^.!?\n]{0,30}\b(?:office|onsite|on-site)\b",
     r"\b\d+\s+(?:office|onsite|on-site)\s+days?\b",
-    r"\boffice\s+days?\b",
 )
 EXPLICIT_BROAD_COUNTRIES = {
     "EU", "EEA", "EUROPE", "EUROPEAN UNION", "EMEA", "WORLDWIDE", "GLOBAL", "ANYWHERE",
@@ -62,29 +75,57 @@ def classify_catalog_job(job: dict) -> dict:
     structured = _json_dict(job.get("structured_data"))
     alias_data = [_json_dict(value) for value in job.get("alias_metadata") or []]
     source_variants = [source_data]
-    search_queries = [job.get("search_query")]
     for alias in alias_data:
         source_variants.append(_json_dict(alias.get("source_structured_data")))
-        search_queries.append(alias.get("search_query"))
     stacks = []
-    for key in ("stack", "stack_required", "stack_preferred"):
-        value = structured.get(key) or source_data.get(key) or []
-        stacks.extend(value if isinstance(value, list) else [value])
-    for skill in structured.get("skills") or []:
+    structured_skills = structured.get("skills") or []
+    if structured_skills:
+        for key in ("stack_required", "stack_preferred"):
+            value = structured.get(key) or []
+            stacks.extend(value if isinstance(value, list) else [value])
+    else:
+        for key in ("stack", "stack_required", "stack_preferred"):
+            value = structured.get(key) or source_data.get(key) or []
+            stacks.extend(value if isinstance(value, list) else [value])
+    for skill in structured_skills:
         if isinstance(skill, dict):
-            stacks.extend([skill.get("canonical_name"), skill.get("original_name")])
+            if skill.get("importance") not in {"incidental", "context"}:
+                stacks.extend([skill.get("canonical_name"), skill.get("original_name")])
+    category_text = " ".join(str(value or "") for value in (job.get("title"), *stacks)).lower()
+    if not structured and not stacks:
+        category_text = f"{category_text} {job.get('description') or ''}".lower()
     text = " ".join(str(value or "") for value in (
-        job.get("title"), job.get("description"), *search_queries, *stacks,
+        job.get("title"), job.get("description"), *stacks,
     )).lower()
     technologies = [
         technology for technology, patterns in TECHNOLOGY_PATTERNS.items()
         if technology != "qa"
-        if any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
+        if any(re.search(pattern, category_text, re.IGNORECASE) for pattern in patterns)
     ]
     qa_text = " ".join(str(value or "") for value in (job.get("title"), *stacks)).lower()
     if any(re.search(pattern, qa_text, re.IGNORECASE) for pattern in TECHNOLOGY_PATTERNS["qa"]):
         technologies.append("qa")
     technologies.sort()
+
+    title = str(job.get("title") or "").lower()
+    extracted_role = str(structured.get("role_family") or "").strip().lower().replace("_", "-")
+    role_aliases = {
+        "software": "software-engineering", "software-engineering": "software-engineering",
+        "back-end": "backend", "front-end": "frontend", "full-stack": "fullstack",
+        "machine-learning": "ml-ai", "ml": "ml-ai", "ai": "ml-ai",
+    }
+    extracted_role = role_aliases.get(extracted_role, extracted_role)
+    role_families = [
+        role for role, patterns in ROLE_FAMILY_PATTERNS.items()
+        if any(re.search(pattern, title, re.IGNORECASE) for pattern in patterns)
+    ]
+    if extracted_role in ROLE_FAMILY_PATTERNS:
+        role_families.append(extracted_role)
+    if role_families and "software-engineering" not in role_families and any(
+        role in role_families for role in ("backend", "frontend", "fullstack")
+    ):
+        role_families.append("software-engineering")
+    role_families = sorted(set(role_families))
 
     location = str(job.get("location") or "").lower()
     regions = []
@@ -101,25 +142,46 @@ def classify_catalog_job(job: dict) -> dict:
     # rows leaking into the catalog.  A clearly labelled "fully remote"
     # location remains a safe fallback for legacy rows without structured
     # data.
-    source_remote = any(variant.get("remote") is True for variant in source_variants)
-    extracted_remote = structured.get("remote") is True
-    remote = source_remote or extracted_remote
-    if not remote and re.search(r"\b(?:fully|100%|all)\s*[- ]?remote\b|\bremote[- ]only\b", location):
+    source_remote_available = any(variant.get("remote_available") is True for variant in source_variants)
+    extracted_remote_available = structured.get("remote_available") is True
+    remote_available_known = isinstance(structured.get("remote_available"), bool) or any(
+        isinstance(variant.get("remote_available"), bool) for variant in source_variants
+    )
+    source_remote_signal = source_remote_available or any(
+        variant.get("remote") is True for variant in source_variants
+    )
+    if isinstance(structured.get("remote_available"), bool):
+        remote = structured["remote_available"]
+    elif source_remote_available:
+        remote = True
+    elif any(isinstance(variant.get("remote_available"), bool) for variant in source_variants):
+        remote = False
+    else:
+        remote = structured.get("remote") is True or any(
+            variant.get("remote") is True for variant in source_variants
+        )
+    if not remote_available_known and not remote and re.search(r"\b(?:fully|100%|all)\s*[- ]?remote\b|\bremote[- ]only\b", location):
         remote = True
 
-    source_hybrid = any(variant.get("hybrid") is True for variant in source_variants)
-    extracted_hybrid = structured.get("hybrid") is True
-    # The location is source-native for many boards (for example
-    # ``Warsaw, Poland (Hybrid)``), so treat it as a hard exclusion.  The
-    # description check is intentionally conservative: an ambiguous posting
-    # mentioning hybrid/onsite work should not become a public full-remote
-    # result until extraction supplies a clean remote-only fact.
     description = str(job.get("description") or "").lower()
-    has_non_full_remote_marker = (
-        any(marker in location for marker in NON_FULL_REMOTE_LOCATION_MARKERS)
-        or any(re.search(pattern, description) for pattern in NON_FULL_REMOTE_DESCRIPTION_PATTERNS)
+    office_presence_required = any(
+        variant.get("office_presence_required") is True for variant in source_variants
+    ) or structured.get("office_presence_required") is True
+    office_presence_optional = (
+        (source_remote_available and any(variant.get("office_presence_required") is False for variant in source_variants))
+        or (extracted_remote_available and structured.get("office_presence_required") is False)
     )
-    full_remote = remote and not (source_hybrid or extracted_hybrid or has_non_full_remote_marker)
+    has_required_office_marker = any(
+        re.search(pattern, description) for pattern in NON_FULL_REMOTE_DESCRIPTION_PATTERNS
+    )
+    has_location_office_marker = any(marker in location for marker in (
+        "hybrid", "hybryd", "on-site", "onsite", "on site", "office-based", "office based",
+    ))
+    full_remote = remote and not (
+        office_presence_required
+        or has_required_office_marker
+        or (has_location_office_marker and not office_presence_optional)
+    )
 
     countries = []
     exact_countries = [
@@ -165,7 +227,9 @@ def classify_catalog_job(job: dict) -> dict:
     explicit_eligibility = {
         code for code, item in country_items.items() if item.get("eligible") is True
     }
-    explicit_ineligible = set(country_items) - explicit_eligibility
+    explicit_ineligible = {
+        code for code, item in country_items.items() if item.get("eligible") is False
+    }
     countries = (set(countries) | explicit_eligibility | ({"PL", "BG"} if broad_eligible else set())) - explicit_ineligible
     if not full_remote:
         countries = set()
@@ -178,16 +242,17 @@ def classify_catalog_job(job: dict) -> dict:
         item.get("eligible") is True and (item.get("evidence") or item.get("confidence") is not None)
         for item in country_items.values()
     ) or broad_eligible
-    source_country_evidence = bool(source_remote and exact_countries)
+    source_country_evidence = bool(source_remote_signal and exact_countries)
     confidence = (
         "high" if countries and (has_structured_evidence or source_country_evidence)
         else "medium" if countries else "unknown"
     )
     return {
         "technologies": technologies,
+        "role_families": role_families,
         "work_countries": sorted(countries),
         "eligibility_confidence": confidence,
-        "is_public": bool(technologies and countries and job.get("description") and full_remote),
+        "is_public": bool((technologies or role_families) and countries and job.get("description") and full_remote),
     }
 
 
@@ -206,16 +271,17 @@ def refresh_job(conn, job_id: str) -> None:
     metadata = classify_catalog_job(dict(row))
     cur.execute(
         """INSERT INTO job_catalog_metadata
-               (job_id, technologies, work_countries, eligibility_confidence, is_public, classifier_version, updated_at)
-           VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+               (job_id, technologies, role_families, work_countries, eligibility_confidence, is_public, classifier_version, updated_at)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
            ON CONFLICT (job_id) DO UPDATE SET
                technologies = EXCLUDED.technologies,
+               role_families = EXCLUDED.role_families,
                work_countries = EXCLUDED.work_countries,
                eligibility_confidence = EXCLUDED.eligibility_confidence,
                is_public = EXCLUDED.is_public,
                classifier_version = EXCLUDED.classifier_version,
                updated_at = CURRENT_TIMESTAMP""",
-        (job_id, metadata["technologies"], metadata["work_countries"], metadata["eligibility_confidence"], metadata["is_public"], CLASSIFIER_VERSION),
+        (job_id, metadata["technologies"], metadata["role_families"], metadata["work_countries"], metadata["eligibility_confidence"], metadata["is_public"], CLASSIFIER_VERSION),
     )
 
 

@@ -297,6 +297,7 @@ def _merge_catalog(cur, survivor_id: str, loser_id: str) -> None:
         cur.execute("UPDATE job_catalog_metadata SET job_id = %s WHERE job_id = %s", (survivor_id, loser_id))
         return
     technologies = sorted(set((current.get("technologies") or []) + (old.get("technologies") or [])))
+    role_families = sorted(set((current.get("role_families") or []) + (old.get("role_families") or [])))
     countries = sorted(set((current.get("work_countries") or []) + (old.get("work_countries") or [])))
     confidence_order = {"unknown": 0, "medium": 1, "high": 2}
     confidence = max(
@@ -306,10 +307,10 @@ def _merge_catalog(cur, survivor_id: str, loser_id: str) -> None:
     public = bool(current.get("is_public")) or bool(old.get("is_public"))
     version = max(current.get("classifier_version") or 0, old.get("classifier_version") or 0)
     cur.execute(
-        """UPDATE job_catalog_metadata SET technologies = %s, work_countries = %s,
+        """UPDATE job_catalog_metadata SET technologies = %s, role_families = %s, work_countries = %s,
                eligibility_confidence = %s, is_public = %s, classifier_version = %s,
                updated_at = GREATEST(updated_at, %s) WHERE job_id = %s""",
-        (technologies, countries, confidence, public, version, old["updated_at"], survivor_id),
+        (technologies, role_families, countries, confidence, public, version, old["updated_at"], survivor_id),
     )
     cur.execute("DELETE FROM job_catalog_metadata WHERE job_id = %s", (loser_id,))
 

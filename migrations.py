@@ -50,6 +50,7 @@ _SCHEMA = """
     CREATE TABLE IF NOT EXISTS job_catalog_metadata (
         job_id                  TEXT PRIMARY KEY REFERENCES job_postings(id) ON DELETE CASCADE,
         technologies            TEXT[] NOT NULL DEFAULT '{}',
+        role_families           TEXT[] NOT NULL DEFAULT '{}',
         work_countries          TEXT[] NOT NULL DEFAULT '{}',
         eligibility_confidence  TEXT NOT NULL DEFAULT 'unknown',
         is_public               BOOLEAN NOT NULL DEFAULT FALSE,
@@ -245,6 +246,13 @@ _SCHEMA = """
         query_matched INTEGER,
         date_matched INTEGER,
         geo_matched INTEGER,
+        source_returned INTEGER,
+        known_url_filtered INTEGER,
+        global_matched INTEGER,
+        duplicate_found INTEGER DEFAULT 0,
+        inserted_found INTEGER,
+        source_status TEXT NOT NULL DEFAULT 'ok',
+        source_error TEXT,
         searched_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -328,6 +336,13 @@ _NEW_COLUMNS = [
     ("search_stats", "query_matched", "INTEGER"),
     ("search_stats", "date_matched", "INTEGER"),
     ("search_stats", "geo_matched", "INTEGER"),
+    ("search_stats", "source_returned", "INTEGER"),
+    ("search_stats", "known_url_filtered", "INTEGER"),
+    ("search_stats", "global_matched", "INTEGER"),
+    ("search_stats", "duplicate_found", "INTEGER DEFAULT 0"),
+    ("search_stats", "inserted_found", "INTEGER"),
+    ("search_stats", "source_status", "TEXT NOT NULL DEFAULT 'ok'"),
+    ("search_stats", "source_error", "TEXT"),
     ("user_job_states", "score_fingerprint", "TEXT"),
     ("user_job_states", "ranking_fingerprint", "TEXT"),
     ("candidate_preferences", "work_country", "TEXT"),
@@ -350,6 +365,7 @@ _NEW_COLUMNS = [
     ("job_postings", "identity_fingerprint", "TEXT"),
     ("job_embeddings", "text_hash", "TEXT"),
     ("job_catalog_metadata", "classifier_version", "INTEGER NOT NULL DEFAULT 0"),
+    ("job_catalog_metadata", "role_families", "TEXT[] NOT NULL DEFAULT '{}'"),
     ("job_fact_extractions", "role_family", "TEXT"),
     ("job_fact_extractions", "seniority_min", "TEXT"),
     ("job_fact_extractions", "seniority_max", "TEXT"),
@@ -426,6 +442,11 @@ def init_db(conn) -> None:
         for table, column, type_sql in _NEW_COLUMNS:
             cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {type_sql}")
             conn.commit()
+
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_job_catalog_role_families "
+            "ON job_catalog_metadata USING GIN(role_families)"
+        )
 
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_job_fact_role "
