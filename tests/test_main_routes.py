@@ -16,6 +16,11 @@ class TestRootRouteAnonymous:
         assert "Remote OK" in resp.text
         assert "remoteok.ico" not in resp.text
 
+    def test_we_work_remotely_is_attributed_without_using_its_logo(self, client):
+        resp = client.get("/")
+        assert "We Work Remotely" in resp.text
+        assert "weworkremotely.ico" not in resp.text
+
     def test_anonymous_landing_has_no_logged_in_only_links(self, client):
         # Dashboard/Preferences/Logout would all just bounce an anonymous
         # visitor straight back to /login if clicked.
