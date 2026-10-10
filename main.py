@@ -75,7 +75,7 @@ def dashboard(request: Request, view: str | None = None, conn=Depends(get_db)):
             "user": None,
             "technology": "python",
             "technology_label": "Python",
-            "catalog_categories": catalog_repo.CATEGORY_LABELS.items(),
+            "catalog_categories": catalog_repo.PUBLIC_CATEGORY_LABELS.items(),
         })
     stats = jobs_repo.get_stats(conn, user["id"])
     if stats["total"] == 0 and view != "dashboard":
@@ -101,7 +101,7 @@ def public_jobs_page(request: Request, technology: str = "python", conn=Depends(
             "user": _require_user(request, conn),
             "technology": technology,
             "technology_label": labels[technology],
-            "catalog_categories": labels.items(),
+            "catalog_categories": catalog_repo.PUBLIC_CATEGORY_LABELS.items(),
         },
     )
 

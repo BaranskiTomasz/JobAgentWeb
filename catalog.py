@@ -42,10 +42,9 @@ ROLE_FAMILY_PATTERNS = {
 }
 
 COUNTRY_NAMES = {"PL": ("poland", "polska"), "BG": ("bulgaria", "bułgaria", "bulgariya")}
-REGIONAL_MARKERS = ("worldwide", "anywhere", "global", "europe", "european", "emea", "eea", "eu-only", "eu only")
 # Bump this whenever the public-catalog qualification rules change.  The
 # migration backfill re-runs the classifier for rows carrying an older value.
-CLASSIFIER_VERSION = 4
+CLASSIFIER_VERSION = 5
 
 NON_FULL_REMOTE_DESCRIPTION_PATTERNS = (
     r"\b(?:required|mandatory)\s+(?:office|onsite|on-site)\b",
@@ -56,6 +55,25 @@ NON_FULL_REMOTE_DESCRIPTION_PATTERNS = (
 EXPLICIT_BROAD_COUNTRIES = {
     "EU", "EEA", "EUROPE", "EUROPEAN UNION", "EMEA", "WORLDWIDE", "GLOBAL", "ANYWHERE",
 }
+
+
+def _normalise_region(value) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip()).upper()
+
+
+def _region_code(value: str) -> str | None:
+    normalized = _normalise_region(value)
+    if normalized in EXPLICIT_BROAD_COUNTRIES:
+        return normalized
+    for marker in sorted(EXPLICIT_BROAD_COUNTRIES, key=len, reverse=True):
+        if re.search(rf"\b{re.escape(marker)}\b", normalized):
+            return marker
+    if re.search(r"\bEUROPEAN\b", normalized):
+        return "EUROPE"
+    return next((code for code, names in COUNTRY_NAMES.items() if any(
+        re.search(rf"\b{re.escape(name.upper())}\b", normalized)
+        for name in names
+    )), None)
 
 
 def _json_dict(value) -> dict:
@@ -134,8 +152,6 @@ def classify_catalog_job(job: dict) -> dict:
         regions.extend(value if isinstance(value, list) else [value])
     structured_regions = structured.get("remote_regions") or []
     regions.extend(structured_regions if isinstance(structured_regions, list) else [structured_regions])
-    eligibility_text = " ".join([location, *[str(region).lower() for region in regions]])
-
     # Only an explicit remote flag (from the source or extraction) qualifies
     # for the public catalog.  Inferring remote from a word in a location such
     # as ``Berlin``/``Remote-friendly`` was the source of hybrid and onsite
@@ -183,32 +199,59 @@ def classify_catalog_job(job: dict) -> dict:
         or (has_location_office_marker and not office_presence_optional)
     )
 
-    countries = []
-    exact_countries = [
+    # A remote flag says how the work is performed, not where it may legally
+    # be performed.  Keep the two decisions separate: only explicit country
+    # or broad-region evidence may populate work_countries.  In particular,
+    # a bare ``Remote`` location and ``eligible=None`` are not evidence.
+    region_values = [str(region) for region in regions if str(region).strip()]
+    region_codes = {_region_code(region) for region in region_values}
+    region_codes.discard(None)
+    source_region_values = []
+    for variant in source_variants:
+        values = variant.get("remote_regions") or []
+        source_region_values.extend(values if isinstance(values, list) else [values])
+    source_region_values = [str(region) for region in source_region_values if str(region).strip()]
+    source_region_codes = {_region_code(region) for region in source_region_values}
+    source_region_codes.discard(None)
+    source_region_present = any(
+        _normalise_region(region) not in {"REMOTE", "FULLY REMOTE", "REMOTE ONLY"}
+        for region in source_region_values
+    )
+    location_code = _region_code(location)
+    location_has_remote_marker = bool(re.search(r"\bremote\b", location))
+    location_remote_evidence = location_has_remote_marker or source_remote_signal or extracted_remote_available
+    description_country_evidence = {
         code for code, names in COUNTRY_NAMES.items()
-        if any(name in eligibility_text for name in names)
-    ]
-    regional = any(marker in eligibility_text for marker in REGIONAL_MARKERS)
-    if not regional and not exact_countries:
-        regional = bool(re.search(
-            r"(?:remote|work(?:ing)? from)[^.!?\n]{0,50}\b(?:worldwide|anywhere|global|europe|emea|eea|eu)\b",
+        if any(re.search(
+            rf"\b(?:remote|work(?:ing)? from)\b[^.!?\n]{{0,60}}\b{re.escape(name)}\b",
             text,
             re.IGNORECASE,
-        ))
-    if remote and regional:
-        countries = ["BG", "PL"]
-    elif remote:
-        countries = exact_countries or [
-            code for code, names in COUNTRY_NAMES.items()
-            if any(re.search(rf"(?:remote|work(?:ing)? from)[^.!?\n]{{0,50}}\b{re.escape(name)}\b", text, re.IGNORECASE) for name in names)
-        ]
-    # Structured country eligibility is stronger than an inferred match from
-    # a location/region.  If extraction explicitly says a country is not (or
-    # is not known to be) eligible, never add it back from broad geographic
-    # text.  This prevents e.g. "Remote" + an employer's country from being
-    # presented as candidate eligibility.
+        ) for name in names)
+    }
+    broad_description_evidence = bool(re.search(
+        r"\b(?:remote|work(?:ing)? from)\b[^.!?\n]{0,60}\b(?:worldwide|anywhere|global|europe|european|emea|eea|eu)\b",
+        text,
+        re.IGNORECASE,
+    ))
+    broad_evidence = bool(region_codes & EXPLICIT_BROAD_COUNTRIES) or (
+        location_remote_evidence and location_code in EXPLICIT_BROAD_COUNTRIES
+    ) or (broad_description_evidence and not source_region_present)
+    direct_region_evidence = {
+        code for code in (source_region_codes if source_region_present else region_codes)
+        if code in COUNTRY_NAMES
+    }
+    if not source_region_present and location_remote_evidence and location_code in COUNTRY_NAMES:
+        direct_region_evidence.add(location_code)
+    if source_region_present:
+        broad_evidence = bool(source_region_codes & EXPLICIT_BROAD_COUNTRIES)
+        description_country_evidence = set()
+
+    # Structured country eligibility is stronger than inferred text.  If
+    # extraction explicitly denies a country, never add it back from broad
+    # geographic text; unknown (None) likewise never grants access.
     country_items = {}
     broad_eligible = False
+    catalog_gate_only = structured.get("_extraction_tier") == "catalog_gate"
     # Source-native eligibility is stronger than free text, while extracted
     # facts take precedence when both layers provide the same country.
     for item in [
@@ -219,18 +262,27 @@ def classify_catalog_job(job: dict) -> dict:
         if not isinstance(item, dict):
             continue
         code = str(item.get("country_code") or "").strip().upper()
-        if code in EXPLICIT_BROAD_COUNTRIES and item.get("eligible") is True:
+        positive_item = item.get("eligible") is True and (
+            not catalog_gate_only or bool(item.get("evidence"))
+        )
+        if code in EXPLICIT_BROAD_COUNTRIES and positive_item and (
+            not source_region_present or bool(source_region_codes & EXPLICIT_BROAD_COUNTRIES)
+        ):
             broad_eligible = True
         if code in {"PL", "BG"}:
             country_items[code] = item
 
     explicit_eligibility = {
-        code for code, item in country_items.items() if item.get("eligible") is True
+        code for code, item in country_items.items()
+        if item.get("eligible") is True and (not catalog_gate_only or bool(item.get("evidence")))
     }
     explicit_ineligible = {
         code for code, item in country_items.items() if item.get("eligible") is False
     }
-    countries = (set(countries) | explicit_eligibility | ({"PL", "BG"} if broad_eligible else set())) - explicit_ineligible
+    countries = set(explicit_eligibility) | direct_region_evidence | description_country_evidence
+    if broad_evidence or broad_eligible:
+        countries |= {"PL", "BG"}
+    countries -= explicit_ineligible
     if not full_remote:
         countries = set()
     countries = sorted(countries)
@@ -242,9 +294,9 @@ def classify_catalog_job(job: dict) -> dict:
         item.get("eligible") is True and (item.get("evidence") or item.get("confidence") is not None)
         for item in country_items.values()
     ) or broad_eligible
-    source_country_evidence = bool(source_remote_signal and exact_countries)
+    source_region_evidence = bool(source_remote_signal and (direct_region_evidence or broad_evidence))
     confidence = (
-        "high" if countries and (has_structured_evidence or source_country_evidence)
+        "high" if countries and (has_structured_evidence or source_region_evidence)
         else "medium" if countries else "unknown"
     )
     return {

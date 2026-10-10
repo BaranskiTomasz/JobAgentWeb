@@ -29,6 +29,18 @@ def test_classifier_maps_european_remote_job_to_both_countries():
     assert result["is_public"] is True
 
 
+def test_classifier_accepts_explicit_eea_remote_evidence():
+    result = classify_catalog_job({
+        "title": "React Developer",
+        "description": "Remote from the EEA.",
+        "location": "EEA (Remote)",
+        "source_structured_data": {"remote": True, "remote_regions": ["EEA"]},
+    })
+    assert result["work_countries"] == ["BG", "PL"]
+    assert result["eligibility_confidence"] == "high"
+    assert result["is_public"] is True
+
+
 def test_classifier_maps_quality_assurance_roles_to_qa():
     result = classify_catalog_job({
         "title": "Senior QA Automation Engineer",
@@ -60,6 +72,79 @@ def test_classifier_does_not_publish_us_only_job():
     })
     assert result["work_countries"] == []
     assert result["is_public"] is False
+
+
+def test_classifier_does_not_treat_generic_remote_as_worldwide():
+    result = classify_catalog_job({
+        "title": "Python Developer",
+        "description": "Fully remote role on a distributed team.",
+        "location": "Remote",
+        "source_structured_data": {"remote": True},
+        "structured_data": {
+            "remote_available": True,
+            "country_eligibility": [
+                {"country_code": "PL", "eligible": None},
+                {"country_code": "BG", "eligible": None},
+            ],
+        },
+    })
+    assert result["work_countries"] == []
+    assert result["eligibility_confidence"] == "unknown"
+    assert result["is_public"] is False
+
+
+def test_classifier_does_not_publish_catalog_gate_claim_without_evidence():
+    result = classify_catalog_job({
+        "title": "Python Developer",
+        "description": "Fully remote role.",
+        "location": "Remote",
+        "structured_data": {
+            "_extraction_tier": "catalog_gate",
+            "remote_available": True,
+            "country_eligibility": [{"country_code": "PL", "eligible": True}],
+        },
+    })
+    assert result["work_countries"] == []
+    assert result["is_public"] is False
+
+
+def test_classifier_does_not_infer_catalog_country_from_india_only_listing():
+    result = classify_catalog_job({
+        "title": "Python Developer",
+        "description": "Remote from India only.",
+        "location": "India (Remote)",
+        "source_structured_data": {"remote": True, "remote_regions": ["India"]},
+    })
+    assert result["work_countries"] == []
+    assert result["is_public"] is False
+
+
+def test_classifier_keeps_germany_hybrid_out_of_remote_catalog():
+    result = classify_catalog_job({
+        "title": "Python Developer",
+        "description": "Remote work with two mandatory office days in Germany.",
+        "location": "Germany (Hybrid)",
+        "source_structured_data": {"remote": True, "remote_regions": ["Germany"]},
+    })
+    assert result["work_countries"] == []
+    assert result["is_public"] is False
+
+
+def test_classifier_accepts_explicit_bulgaria_and_poland_independently():
+    bulgaria = classify_catalog_job({
+        "title": "Python Developer",
+        "description": "Fully remote from Bulgaria.",
+        "location": "Remote",
+        "source_structured_data": {"remote": True, "remote_regions": ["Bulgaria"]},
+    })
+    poland = classify_catalog_job({
+        "title": "Python Developer",
+        "description": "Fully remote from Poland.",
+        "location": "Remote",
+        "source_structured_data": {"remote": True, "remote_regions": ["Poland"]},
+    })
+    assert bulgaria["work_countries"] == ["BG"]
+    assert poland["work_countries"] == ["PL"]
 
 
 def test_classifier_uses_cross_source_alias_eligibility():

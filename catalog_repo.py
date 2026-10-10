@@ -4,9 +4,14 @@ from db import dict_cursor
 TECHNOLOGIES = ("php", "python", "nodejs", "react", "angular", "qa", "java", "dotnet", "go")
 ROLE_FAMILIES = ("software-engineering", "backend", "frontend", "fullstack", "mobile", "devops", "data", "ml-ai")
 CATEGORIES = TECHNOLOGIES + ROLE_FAMILIES
-CATEGORY_LABELS = {
+TECHNOLOGY_LABELS = {
     "php": "PHP", "python": "Python", "nodejs": "Node.js", "react": "React",
     "angular": "Angular", "qa": "QA", "java": "Java", "dotnet": ".NET", "go": "Go",
+}
+PUBLIC_CATEGORIES = TECHNOLOGIES + ("devops",)
+PUBLIC_CATEGORY_LABELS = {**TECHNOLOGY_LABELS, "devops": "DevOps"}
+CATEGORY_LABELS = {
+    **TECHNOLOGY_LABELS,
     "software-engineering": "Software Engineering", "backend": "Backend",
     "frontend": "Frontend", "fullstack": "Full Stack", "mobile": "Mobile",
     "devops": "DevOps / Platform", "data": "Data Engineering", "ml-ai": "ML / AI",
