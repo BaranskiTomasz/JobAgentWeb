@@ -71,6 +71,7 @@ class PublicJobOut(BaseModel):
     technologies: list[str]
     role_families: list[str]
     work_countries: list[str]
+    company_country: str | None
     eligibility_confidence: str
     excerpt: str | None
     description: str | None

@@ -36,7 +36,8 @@ def search_public_jobs(
     technology: str = "python", country: str = "PL",
     limit: int = Query(30, ge=1, le=100), offset: int = Query(0, ge=0),
     q: str | None = Query(None, max_length=200), source: str | None = Query(None, max_length=100),
-    company: str | None = Query(None, max_length=200), seniority: str | None = None,
+    company: str | None = Query(None, max_length=200),
+    company_country: str | None = Query(None, max_length=100), seniority: str | None = None,
     skill: str | None = Query(None, max_length=100), role_family: str | None = None,
     contract_type: str | None = None, currency: str | None = None,
     salary_min: float | None = Query(None, ge=0), salary_period: str | None = None,
@@ -52,6 +53,7 @@ def search_public_jobs(
     technology, country = _validate(technology, country)
     return catalog_repo.search_jobs(
         conn, technology, country, limit, offset, query=q, source=source, company=company,
+        company_country=company_country,
         seniority=seniority, skill=skill, role_family=role_family,
         contract_type=contract_type, currency=currency, salary_min=salary_min,
         salary_period=salary_period, working_language=working_language, timezone=timezone,

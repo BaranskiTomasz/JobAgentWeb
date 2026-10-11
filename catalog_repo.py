@@ -26,6 +26,7 @@ _PUBLIC_JOB_SELECT = """SELECT jp.id, jp.title, jp.company, jp.location,
                   jp.url
               ) AS url,
               jp.source, jp.posted_at, jp.created_at, jcm.technologies, jcm.role_families, jcm.work_countries,
+              jcm.company_country,
               jcm.eligibility_confidence,
               LEFT(REGEXP_REPLACE(jp.description, '\\s+', ' ', 'g'), 320) AS excerpt,
               jp.description, jfe.facts AS structured_data, jfe.extracted_at,
@@ -70,6 +71,7 @@ def search_jobs(
     conn, technology: str, country: str, limit: int, offset: int,
     *,
     query: str | None = None, source: str | None = None, company: str | None = None,
+    company_country: str | None = None,
     seniority: str | None = None, skill: str | None = None, role_family: str | None = None,
     contract_type: str | None = None, currency: str | None = None,
     salary_min: float | None = None, salary_period: str | None = None,
@@ -95,6 +97,9 @@ def search_jobs(
     if company:
         conditions.append("jp.company = %s")
         params.append(company)
+    if company_country:
+        conditions.append("jcm.company_country = %s")
+        params.append(company_country)
     if seniority:
         conditions.append("%s IN (jfe.facts->>'seniority', jfe.facts->>'seniority_min', jfe.facts->>'seniority_max')")
         params.append(seniority)
@@ -192,9 +197,10 @@ def filter_options(conn, technology: str, country: str) -> dict:
         f"""SELECT
             ARRAY(SELECT DISTINCT COALESCE(a.source, p.source) FROM job_catalog_metadata m JOIN job_postings p ON p.id = m.job_id LEFT JOIN job_posting_aliases a ON a.job_id = p.id WHERE m.is_public AND (%s = ANY(m.technologies) OR %s = ANY(m.role_families)) AND %s = ANY(m.work_countries) AND COALESCE(p.posted_at, p.created_at) >= {freshness} AND COALESCE(a.source, p.source) IS NOT NULL ORDER BY 1) AS sources,
             ARRAY(SELECT DISTINCT p.company FROM job_catalog_metadata m JOIN job_postings p ON p.id = m.job_id WHERE m.is_public AND (%s = ANY(m.technologies) OR %s = ANY(m.role_families)) AND %s = ANY(m.work_countries) AND COALESCE(p.posted_at, p.created_at) >= {freshness} AND p.company IS NOT NULL ORDER BY 1) AS companies,
+            ARRAY(SELECT DISTINCT m.company_country FROM job_catalog_metadata m JOIN job_postings p ON p.id = m.job_id WHERE m.is_public AND (%s = ANY(m.technologies) OR %s = ANY(m.role_families)) AND %s = ANY(m.work_countries) AND COALESCE(p.posted_at, p.created_at) >= {freshness} AND m.company_country IS NOT NULL ORDER BY 1) AS company_countries,
             ARRAY(SELECT DISTINCT s.canonical_name FROM job_catalog_metadata m JOIN job_postings p ON p.id = m.job_id JOIN job_skills s ON s.job_id = p.id WHERE m.is_public AND (%s = ANY(m.technologies) OR %s = ANY(m.role_families)) AND %s = ANY(m.work_countries) AND COALESCE(p.posted_at, p.created_at) >= {freshness} ORDER BY 1) AS skills,
             ARRAY(SELECT DISTINCT f.facts->>'industry' FROM job_catalog_metadata m JOIN job_postings p ON p.id = m.job_id JOIN job_fact_extractions f ON f.job_id = p.id WHERE m.is_public AND (%s = ANY(m.technologies) OR %s = ANY(m.role_families)) AND %s = ANY(m.work_countries) AND COALESCE(p.posted_at, p.created_at) >= {freshness} AND NULLIF(f.facts->>'industry', '') IS NOT NULL ORDER BY 1) AS industries""",
-        [value for _ in range(4) for value in (technology, technology, country)],
+        [value for _ in range(5) for value in (technology, technology, country)],
     )
     row = dict(cur.fetchone())
     return {key: value or [] for key, value in row.items()}

@@ -217,3 +217,16 @@ def test_dropped_columns_are_actually_gone():
         assert cur.fetchall() == []
     finally:
         db_module._get_pool().putconn(conn)
+
+
+def test_job_catalog_metadata_has_company_country_column():
+    conn = db_module._get_pool().getconn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT data_type, is_nullable, column_default FROM information_schema.columns "
+            "WHERE table_name = 'job_catalog_metadata' AND column_name = 'company_country'"
+        )
+        assert cur.fetchone() == ("text", "YES", None)
+    finally:
+        db_module._get_pool().putconn(conn)

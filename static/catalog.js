@@ -22,6 +22,7 @@ const filterIds = {
   contract_type: "contract-filter",
   working_language: "language-filter",
   company_type: "company-type-filter",
+  company_country: "company-country-filter",
   industry: "industry-filter",
   currency: "currency-filter",
   salary_min: "salary-filter",
@@ -188,6 +189,7 @@ async function loadFilterOptions() {
   const options = await response.json();
   setOptions(sourceFilter, options.sources || [], "All sources");
   setOptions(companyFilter, options.companies || [], "All employers");
+  setOptions(document.getElementById("company-country-filter"), options.company_countries || [], "Any company country");
   setOptions(document.getElementById("skill-filter"), options.skills || [], "Any skill");
   setOptions(document.getElementById("industry-filter"), options.industries || [], "Any industry");
 }

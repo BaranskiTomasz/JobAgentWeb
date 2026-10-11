@@ -44,7 +44,7 @@ ROLE_FAMILY_PATTERNS = {
 COUNTRY_NAMES = {"PL": ("poland", "polska"), "BG": ("bulgaria", "bułgaria", "bulgariya")}
 # Bump this whenever the public-catalog qualification rules change.  The
 # migration backfill re-runs the classifier for rows carrying an older value.
-CLASSIFIER_VERSION = 5
+CLASSIFIER_VERSION = 6
 
 NON_FULL_REMOTE_DESCRIPTION_PATTERNS = (
     r"\b(?:required|mandatory)\s+(?:office|onsite|on-site)\b",
@@ -303,6 +303,7 @@ def classify_catalog_job(job: dict) -> dict:
         "technologies": technologies,
         "role_families": role_families,
         "work_countries": sorted(countries),
+        "company_country": structured.get("company_country"),
         "eligibility_confidence": confidence,
         "is_public": bool((technologies or role_families) and countries and job.get("description") and full_remote),
     }
@@ -323,17 +324,18 @@ def refresh_job(conn, job_id: str) -> None:
     metadata = classify_catalog_job(dict(row))
     cur.execute(
         """INSERT INTO job_catalog_metadata
-               (job_id, technologies, role_families, work_countries, eligibility_confidence, is_public, classifier_version, updated_at)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+               (job_id, technologies, role_families, work_countries, company_country, eligibility_confidence, is_public, classifier_version, updated_at)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
            ON CONFLICT (job_id) DO UPDATE SET
                technologies = EXCLUDED.technologies,
                role_families = EXCLUDED.role_families,
                work_countries = EXCLUDED.work_countries,
+               company_country = EXCLUDED.company_country,
                eligibility_confidence = EXCLUDED.eligibility_confidence,
                is_public = EXCLUDED.is_public,
                classifier_version = EXCLUDED.classifier_version,
                updated_at = CURRENT_TIMESTAMP""",
-        (job_id, metadata["technologies"], metadata["role_families"], metadata["work_countries"], metadata["eligibility_confidence"], metadata["is_public"], CLASSIFIER_VERSION),
+        (job_id, metadata["technologies"], metadata["role_families"], metadata["work_countries"], metadata["company_country"], metadata["eligibility_confidence"], metadata["is_public"], CLASSIFIER_VERSION),
     )
 
 

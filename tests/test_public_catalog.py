@@ -29,6 +29,26 @@ def test_classifier_maps_european_remote_job_to_both_countries():
     assert result["is_public"] is True
 
 
+def test_classifier_passes_company_country_through_without_deriving_it():
+    present = classify_catalog_job({
+        "title": "Python Developer",
+        "description": "Remote from Poland.",
+        "location": "Poland (Remote)",
+        "structured_data": {"company_country": "DE"},
+        "source_structured_data": {"remote": True, "remote_regions": ["Poland"]},
+    })
+    absent = classify_catalog_job({
+        "title": "Python Developer",
+        "description": "Remote from Poland.",
+        "location": "Poland (Remote)",
+        "source_structured_data": {"remote": True, "remote_regions": ["Poland"]},
+    })
+
+    assert present["company_country"] == "DE"
+    assert absent["company_country"] is None
+    assert absent["work_countries"] == ["PL"]
+
+
 def test_classifier_accepts_explicit_eea_remote_evidence():
     result = classify_catalog_job({
         "title": "React Developer",
@@ -333,6 +353,10 @@ def test_public_search_filters_extracted_facts(client, logged_in_client, db_conn
     job_id = _create_catalog_job(logged_in_client)
     cur = db_conn.cursor()
     cur.execute(
+        "UPDATE job_catalog_metadata SET company_country = 'DE' WHERE job_id = %s",
+        (job_id,),
+    )
+    cur.execute(
         """INSERT INTO job_fact_extractions
                (job_id, schema_version, model, content_hash, facts)
            VALUES (%s, 4, 'test', 'hash', %s::jsonb)""",
@@ -374,7 +398,7 @@ def test_public_search_filters_extracted_facts(client, logged_in_client, db_conn
 
     response = client.get("/api/public/jobs/search", params={
         "technology": "python", "country": "PL", "skill": "python",
-        "company": "Acme", "seniority": "senior", "role_family": "backend",
+        "company": "Acme", "company_country": "DE", "seniority": "senior", "role_family": "backend",
         "contract_type": "b2b", "currency": "PLN", "salary_min": 120,
         "salary_period": "hourly",
         "working_language": "english", "timezone": "CET",
@@ -393,10 +417,19 @@ def test_public_search_filters_extracted_facts(client, logged_in_client, db_conn
     })
     assert no_match.json()["total"] == 0
 
+    no_match_country = client.get("/api/public/jobs/search", params={
+        "technology": "python", "country": "PL", "company_country": "PL",
+    })
+    assert no_match_country.json()["total"] == 0
+
 
 def test_public_filter_options_are_scoped_to_category(client, logged_in_client, db_conn):
     job_id = _create_catalog_job(logged_in_client, source="jobicy")
     cur = db_conn.cursor()
+    cur.execute(
+        "UPDATE job_catalog_metadata SET company_country = 'DE' WHERE job_id = %s",
+        (job_id,),
+    )
     cur.execute(
         """INSERT INTO job_fact_extractions
                (job_id, schema_version, model, content_hash, facts)
@@ -415,6 +448,7 @@ def test_public_filter_options_are_scoped_to_category(client, logged_in_client, 
 
     assert response.status_code == 200
     assert "Acme" in response.json()["companies"]
+    assert "DE" in response.json()["company_countries"]
     assert "jobicy" in response.json()["sources"]
     assert "python" in response.json()["skills"]
     assert "fintech" in response.json()["industries"]
@@ -458,6 +492,7 @@ def test_public_catalog_page_is_available_without_account(client):
     assert response.status_code == 200
     assert "React jobs" in response.text
     assert "More filters" in response.text
+    assert "Company country" in response.text
     assert "Minimum listed compensation" in response.text
 
 

@@ -52,6 +52,7 @@ _SCHEMA = """
         technologies            TEXT[] NOT NULL DEFAULT '{}',
         role_families           TEXT[] NOT NULL DEFAULT '{}',
         work_countries          TEXT[] NOT NULL DEFAULT '{}',
+        company_country         TEXT,
         eligibility_confidence  TEXT NOT NULL DEFAULT 'unknown',
         is_public               BOOLEAN NOT NULL DEFAULT FALSE,
         classifier_version      INTEGER NOT NULL DEFAULT 0,
@@ -61,7 +62,6 @@ _SCHEMA = """
     CREATE INDEX IF NOT EXISTS idx_job_catalog_public ON job_catalog_metadata(is_public);
     CREATE INDEX IF NOT EXISTS idx_job_catalog_technologies ON job_catalog_metadata USING GIN(technologies);
     CREATE INDEX IF NOT EXISTS idx_job_catalog_countries ON job_catalog_metadata USING GIN(work_countries);
-
     CREATE TABLE IF NOT EXISTS job_fact_extractions (
         job_id          TEXT PRIMARY KEY REFERENCES job_postings(id) ON DELETE CASCADE,
         schema_version  INTEGER NOT NULL,
@@ -366,6 +366,7 @@ _NEW_COLUMNS = [
     ("job_embeddings", "text_hash", "TEXT"),
     ("job_catalog_metadata", "classifier_version", "INTEGER NOT NULL DEFAULT 0"),
     ("job_catalog_metadata", "role_families", "TEXT[] NOT NULL DEFAULT '{}'"),
+    ("job_catalog_metadata", "company_country", "TEXT"),
     ("job_fact_extractions", "role_family", "TEXT"),
     ("job_fact_extractions", "seniority_min", "TEXT"),
     ("job_fact_extractions", "seniority_max", "TEXT"),
@@ -446,6 +447,10 @@ def init_db(conn) -> None:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_job_catalog_role_families "
             "ON job_catalog_metadata USING GIN(role_families)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_job_catalog_company_country "
+            "ON job_catalog_metadata(company_country)"
         )
 
         cur.execute(
