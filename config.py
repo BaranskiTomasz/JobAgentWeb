@@ -38,3 +38,7 @@ RATE_LIMIT_ENABLED = os.getenv("DISABLE_RATE_LIMIT", "false").lower() != "true"
 # user_id. Both must be set for the bypass to activate.
 JOBAGENT_API_KEY = os.getenv("JOBAGENT_API_KEY")
 JOBAGENT_API_KEY_USER_ID = os.getenv("JOBAGENT_API_KEY_USER_ID")
+
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+CLAUDE_EXTRACT_MODEL = os.getenv("CLAUDE_EXTRACT_MODEL", "claude-haiku-4-5-20251001")
+CLAUDE_CATALOG_EXTRACT_MODEL = os.getenv("CLAUDE_CATALOG_EXTRACT_MODEL", "claude-haiku-5-5")

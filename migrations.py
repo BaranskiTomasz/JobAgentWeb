@@ -235,7 +235,7 @@ _SCHEMA = """
 
     CREATE TABLE IF NOT EXISTS search_stats (
         id           INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id      INTEGER REFERENCES users(id) ON DELETE CASCADE,
         session_id   INTEGER REFERENCES sessions(id),
         source       TEXT NOT NULL,
         search_query TEXT NOT NULL,
@@ -440,6 +440,10 @@ def init_db(conn) -> None:
     cur.execute("SELECT pg_advisory_lock(%s)", (_MIGRATION_LOCK_ID,))
     try:
         cur.execute(_SCHEMA)
+        conn.commit()
+        # Shared catalog collection has no owning user but retains the same
+        # source funnel telemetry as user-initiated collection.
+        cur.execute("ALTER TABLE search_stats ALTER COLUMN user_id DROP NOT NULL")
         conn.commit()
 
         for table, column, type_sql in _NEW_COLUMNS:

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
@@ -20,6 +21,19 @@ from routers import (
 )
 
 _BASE_DIR = Path(__file__).parent
+logger = logging.getLogger(__name__)
+
+
+def _run_scheduled_catalog_collection() -> None:
+    from collectors.catalog_runner import run_catalog_collection
+    conn = _get_pool().getconn()
+    try:
+        run_catalog_collection(conn)
+    except Exception:
+        conn.rollback()
+        logger.exception("scheduled catalog collection failed")
+    finally:
+        _get_pool().putconn(conn)
 
 
 @asynccontextmanager
@@ -29,7 +43,17 @@ async def lifespan(app: FastAPI):
         migrations.init_db(conn)
     finally:
         _get_pool().putconn(conn)
-    yield
+    from apscheduler.schedulers.background import BackgroundScheduler
+    scheduler = BackgroundScheduler(timezone="UTC")
+    scheduler.add_job(
+        _run_scheduled_catalog_collection, "interval", days=1,
+        id="catalog_collection", replace_existing=True, max_instances=1, coalesce=True,
+    )
+    scheduler.start()
+    try:
+        yield
+    finally:
+        scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="JobAgentWeb", lifespan=lifespan)

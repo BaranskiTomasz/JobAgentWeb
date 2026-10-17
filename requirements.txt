@@ -10,4 +10,6 @@ bcrypt==5.0.0
 itsdangerous==2.2.0
 pytest==8.4.2
 httpx==0.28.1
+apscheduler==3.11.2
+anthropic==0.100.0
 numpy==2.5.1
