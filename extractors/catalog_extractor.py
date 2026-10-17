@@ -4,11 +4,67 @@ import hashlib
 import re
 import anthropic
 
-from config import ANTHROPIC_API_KEY, CLAUDE_CATALOG_EXTRACT_MODEL, CLAUDE_EXTRACT_MODEL
+from config import (
+    ANTHROPIC_API_KEY,
+    CLAUDE_CATALOG_EXTRACT_MODEL,
+    CLAUDE_EXTRACT_MODEL,
+    JOBAGENT_API_KEY_USER_ID,
+    MODEL_COSTS,
+)
 from collectors.utils import build_excerpt
 import jobs_repo as job_repository
+import usage_repo
 
 logger = logging.getLogger(__name__)
+
+_usage_user_id: int | None = None
+_usage_user_id_resolved = False
+_usage_user_id_warning_emitted = False
+_unknown_model_warning_emitted = False
+
+
+def _usage_data(response, model: str) -> dict:
+    return {
+        "_extraction_model": model,
+        "_input_tokens": response.usage.input_tokens,
+        "_output_tokens": response.usage.output_tokens,
+    }
+
+
+def _has_extraction_payload(data: dict) -> bool:
+    return any(key not in {"_extraction_model", "_input_tokens", "_output_tokens"} for key in data)
+
+
+def _log_extraction_usage(conn, data: dict) -> None:
+    global _usage_user_id, _usage_user_id_resolved, _usage_user_id_warning_emitted
+    global _unknown_model_warning_emitted
+
+    if not data:
+        return
+    if not _usage_user_id_resolved:
+        _usage_user_id_resolved = True
+        if JOBAGENT_API_KEY_USER_ID:
+            _usage_user_id = int(JOBAGENT_API_KEY_USER_ID)
+        elif not _usage_user_id_warning_emitted:
+            logger.warning("Catalog extraction usage logging skipped: JOBAGENT_API_KEY_USER_ID is unset.")
+            _usage_user_id_warning_emitted = True
+    if _usage_user_id is None:
+        return
+
+    input_tokens = data.pop("_input_tokens", 0)
+    output_tokens = data.pop("_output_tokens", 0)
+    model = data.get("_extraction_model")
+    rates = MODEL_COSTS.get(model)
+    if rates is None:
+        if not _unknown_model_warning_emitted:
+            logger.warning("Catalog extraction usage logging skipped: no pricing for model %s.", model)
+            _unknown_model_warning_emitted = True
+        return
+    input_rate, output_rate = rates
+    cost_usd = input_tokens / 1_000_000 * input_rate + output_tokens / 1_000_000 * output_rate
+    usage_repo.log_usage(
+        conn, _usage_user_id, model, "catalog_extractor", input_tokens, output_tokens, cost_usd,
+    )
 
 
 def call_with_retry(fn, *, label: str, max_attempts: int = 3):
@@ -354,7 +410,7 @@ def extract_job(
             # run_extraction()'s `if data:` guard retry the job next run
             # instead of permanently writing missing fields as null.
             logger.warning("Extraction response truncated (max_tokens), will retry next run.")
-            return {}
+            return _usage_data(response, model)
 
         tool_block = next((b for b in response.content if b.type == "tool_use"), None)
         if tool_block:
@@ -366,8 +422,9 @@ def extract_job(
             for item in data.get("country_eligibility") or []:
                 item["confidence"] = 0.75
             data["_field_confidence"] = _field_confidence_from_evidence(data)
-            data["_extraction_model"] = model
+            data.update(_usage_data(response, model))
             return data
+        return _usage_data(response, model)
     except Exception as e:
         logger.warning(f"Extraction failed: {e}")
     return {}
@@ -397,17 +454,17 @@ def extract_catalog_gate(
         )
         if response.stop_reason == "max_tokens":
             logger.warning("Catalog gate response truncated, falling back to full extraction.")
-            return {}
+            return _usage_data(response, model)
         tool_block = next((block for block in response.content if block.type == "tool_use"), None)
         if not tool_block:
-            return {}
+            return _usage_data(response, model)
         data = dict(tool_block.input)
         for item in data.get("country_eligibility") or []:
             item["confidence"] = 0.75
         data["_field_confidence"] = {
             key: "medium" for key, value in data.items() if value not in (None, [], "unknown")
         }
-        data["_extraction_model"] = model
+        data.update(_usage_data(response, model))
         return data
     except Exception as error:
         logger.warning("Catalog gate failed, falling back to full extraction: %s", error)
@@ -608,16 +665,19 @@ def _catalog_gate_rejects(data: dict) -> bool:
     return not positive
 
 
-def _catalog_extract(function, description: str, source: str | None) -> dict:
+def _catalog_extract(function, description: str, source: str | None) -> tuple[dict, list[dict]]:
     data = function(description, source, CLAUDE_CATALOG_EXTRACT_MODEL)
-    if data or CLAUDE_CATALOG_EXTRACT_MODEL == CLAUDE_EXTRACT_MODEL:
-        return data
+    attempts = [data]
+    if _has_extraction_payload(data) or CLAUDE_CATALOG_EXTRACT_MODEL == CLAUDE_EXTRACT_MODEL:
+        return data, attempts
     logger.warning(
         "Catalog extraction with %s failed; retrying with %s.",
         CLAUDE_CATALOG_EXTRACT_MODEL,
         CLAUDE_EXTRACT_MODEL,
     )
-    return function(description, source, CLAUDE_EXTRACT_MODEL)
+    data = function(description, source, CLAUDE_EXTRACT_MODEL)
+    attempts.append(data)
+    return data, attempts
 
 
 def run_extraction(conn, jobs: list[dict], *, catalog: bool = False) -> int:
@@ -629,21 +689,32 @@ def run_extraction(conn, jobs: list[dict], *, catalog: bool = False) -> int:
     for job in to_extract:
         try:
             if catalog:
-                gate_data = _catalog_extract(
+                gate_data, gate_attempts = _catalog_extract(
                     extract_catalog_gate, job["description"], job.get("source"),
                 )
-                if gate_data:
+                for attempt in gate_attempts:
+                    _log_extraction_usage(conn, attempt)
+                if _has_extraction_payload(gate_data):
                     gate_data = _normalize_facts(_merge_source_structured_data(gate_data, job))
                     if _catalog_gate_rejects(gate_data):
                         gate_data["_extraction_tier"] = "catalog_gate"
                         data = gate_data
                     else:
-                        data = _catalog_extract(extract_job, job["description"], job.get("source"))
+                        data, full_attempts = _catalog_extract(
+                            extract_job, job["description"], job.get("source"),
+                        )
+                        for attempt in full_attempts:
+                            _log_extraction_usage(conn, attempt)
                 else:
-                    data = _catalog_extract(extract_job, job["description"], job.get("source"))
+                    data, full_attempts = _catalog_extract(
+                        extract_job, job["description"], job.get("source"),
+                    )
+                    for attempt in full_attempts:
+                        _log_extraction_usage(conn, attempt)
             else:
                 data = extract_job(job["description"], job.get("source"))
-            if not data:
+                _log_extraction_usage(conn, data)
+            if not _has_extraction_payload(data):
                 continue
             extraction_model = data.pop("_extraction_model", CLAUDE_EXTRACT_MODEL)
             data = _merge_source_structured_data(data, job)

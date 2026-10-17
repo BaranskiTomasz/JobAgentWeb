@@ -101,6 +101,7 @@ def test_catalog_gate_uses_anthropic_tool_schema(monkeypatch):
             calls.append(kwargs)
             return SimpleNamespace(
                 stop_reason="tool_use",
+                usage=SimpleNamespace(input_tokens=10, output_tokens=20),
                 content=[SimpleNamespace(type="tool_use", input={
                     "remote": True, "hybrid": False, "remote_available": True,
                     "hybrid_available": False, "office_presence_required": False,

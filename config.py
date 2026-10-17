@@ -42,3 +42,9 @@ JOBAGENT_API_KEY_USER_ID = os.getenv("JOBAGENT_API_KEY_USER_ID")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 CLAUDE_EXTRACT_MODEL = os.getenv("CLAUDE_EXTRACT_MODEL", "claude-haiku-4-5-20251001")
 CLAUDE_CATALOG_EXTRACT_MODEL = os.getenv("CLAUDE_CATALOG_EXTRACT_MODEL", "claude-haiku-5-5")
+
+# Intentionally limited to models used by this service's own extraction.
+MODEL_COSTS: dict[str, tuple[float, float]] = {
+    "claude-haiku-4-5-20251001": (1.00, 5.00),
+    "claude-haiku-5-5": (0.10, 0.50),
+}
