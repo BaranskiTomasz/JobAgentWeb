@@ -26,3 +26,14 @@ def test_one_jobs_db_error_does_not_poison_the_rest_of_the_batch():
     assert updated == 1
     assert mock_update.call_count == 2
     conn.rollback.assert_called_once()
+
+
+def test_normalize_facts_drops_non_string_stack_entries_instead_of_crashing():
+    result = catalog_extractor._normalize_facts({
+        "stack": ["Python", {"name": "Go", "level": "expert"}],
+        "stack_required": [{"name": "Python"}],
+        "stack_preferred": ["Kotlin"],
+    })
+    assert result["stack"] == ["Python", "python"]
+    assert result["stack_required"] == []
+    assert result["stack_preferred"] == ["Kotlin"]
