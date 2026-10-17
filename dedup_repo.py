@@ -16,7 +16,12 @@ from jobs_repo import (
 from source_identity import company_alias, source_identity, title_aliases
 
 DEFAULT_WINDOW_DAYS = 21
-AUTO_MERGE_CONFIDENCE = 0.95
+AUTO_MERGE_CONFIDENCE = 0.60
+# A detected source_id collision between postings whose company/location
+# don't actually match - the opposite of a real match signal, despite its
+# 0.90 confidence number sitting above AUTO_MERGE_CONFIDENCE. Must never
+# auto-merge regardless of where the confidence threshold sits.
+_NEVER_AUTO_MERGE_METHODS = frozenset({"source_requisition_conflict"})
 
 _ATS_SOURCES = {
     "ashby", "bamboohr", "breezy", "greenhouse", "jobvite", "lever",
@@ -173,7 +178,7 @@ def find_candidates(conn, job_id: str, window_days: int = DEFAULT_WINDOW_DAYS) -
             "match_method": method,
             "confidence": confidence,
             "evidence": evidence,
-            "auto_merge": confidence >= AUTO_MERGE_CONFIDENCE,
+            "auto_merge": confidence >= AUTO_MERGE_CONFIDENCE and method not in _NEVER_AUTO_MERGE_METHODS,
             "candidate": candidate,
         })
     return result

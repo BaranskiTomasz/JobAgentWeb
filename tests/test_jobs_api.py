@@ -360,7 +360,12 @@ def test_colliding_source_requisition_ids_are_candidates_not_auto_merged(logged_
     assert cur.fetchone() == ("candidate", "source_requisition_conflict", 0.9, None)
 
 
-def test_identical_cross_source_content_is_not_merged_without_stable_identity(logged_in_client):
+def test_identical_cross_source_content_is_auto_merged(logged_in_client):
+    # exact_content (0.94) is checked ahead of identity, so identical
+    # description text alone is enough - deliberately, AUTO_MERGE_CONFIDENCE
+    # is now low enough (0.60) that every match tier auto-merges except the
+    # one deliberately-excluded source_requisition_conflict (a detected
+    # collision, not a match signal).
     token = uuid.uuid4().hex
     description = "Build reliable distributed backend services in Python and PostgreSQL. " * 4
     first = _create(
@@ -380,9 +385,11 @@ def test_identical_cross_source_content_is_not_merged_without_stable_identity(lo
         description=description,
     )
 
-    assert second["job_id"] is not None
+    assert second["job_id"] is None
     aliases = logged_in_client.get(f"/api/jobs/{first['job_id']}/aliases").json()
-    assert {(item["source"], item["source_id"]) for item in aliases} == {("greenhouse", "acme:123")}
+    assert {(item["source"], item["source_id"]) for item in aliases} == {
+        ("greenhouse", "acme:123"), ("linkedin", "987"),
+    }
 
 
 def test_same_source_distinct_requisitions_are_not_fuzzy_deduplicated(logged_in_client):

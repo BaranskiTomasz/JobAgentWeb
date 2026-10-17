@@ -15,7 +15,7 @@ def _create(client, *, source, url, company, description=None, source_id=None):
     return response.json()
 
 
-def test_exact_cross_source_content_is_queued_for_review(logged_in_client, db_conn):
+def test_exact_cross_source_content_is_auto_merged(logged_in_client, db_conn):
     token = uuid.uuid4().hex
     company = f"Acme {token}"
     linkedin = _create(
@@ -53,22 +53,34 @@ def test_exact_cross_source_content_is_queued_for_review(logged_in_client, db_co
     assert first.status_code == 200
     assert second.status_code == 200
     assert second.json()["id"] == greenhouse["job_id"]
+    # greenhouse (an ATS source) outranks linkedin as survivor regardless of
+    # insertion order - AUTO_MERGE_CONFIDENCE is low enough now (0.60) that
+    # exact_content (0.94) auto-merges instead of waiting for admin review.
     aliases = logged_in_client.get(f"/api/jobs/{greenhouse['job_id']}/aliases").json()
-    assert {alias["source"] for alias in aliases} == {"greenhouse"}
+    assert {alias["source"] for alias in aliases} == {"greenhouse", "linkedin"}
     cur.execute("SELECT COUNT(*) FROM job_postings WHERE id IN (%s, %s)", (linkedin["job_id"], greenhouse["job_id"]))
-    assert cur.fetchone()[0] == 2
-    cur.execute("SELECT COUNT(*) FROM job_compensation_bands WHERE job_id = %s", (greenhouse["job_id"],))
     assert cur.fetchone()[0] == 1
+    cur.execute("SELECT COUNT(*) FROM job_compensation_bands WHERE job_id = %s", (greenhouse["job_id"],))
+    assert cur.fetchone()[0] == 2
     cur.execute(
-        """SELECT status, survivor_job_id, match_method
+        """SELECT status, survivor_job_id
            FROM job_dedup_matches
            WHERE job_id_low = LEAST(%s, %s) AND job_id_high = GREATEST(%s, %s)""",
         (linkedin["job_id"], greenhouse["job_id"], linkedin["job_id"], greenhouse["job_id"]),
     )
-    assert cur.fetchone() == ("candidate", None, "exact_content")
+    # The first PATCH (linkedin's own description) already triggers the merge
+    # the moment it sees greenhouse's still-old description - same company
+    # and title is enough for identity_only (0.60) to clear the bar now, so
+    # the pair never gets a chance to reach the stronger exact_content tier.
+    assert cur.fetchone() == ("auto_merged", greenhouse["job_id"])
 
 
-def test_uncertain_cross_source_match_is_recorded_without_merge(logged_in_client, db_conn):
+def test_uncertain_cross_source_match_is_auto_merged(logged_in_client, db_conn):
+    # Same company + title, 40 of 48 description tokens shared (83%) clears
+    # the identity_description_candidate bar (0.90) - AUTO_MERGE_CONFIDENCE
+    # is low enough now (0.60) that this auto-merges on insert instead of
+    # waiting in the review queue. second's own id never reaches the
+    # caller once merged, so look its match up by first's id instead.
     token = uuid.uuid4().hex
     common = " ".join(f"shared{i}" for i in range(40))
     left_description = common + " alpha beta gamma delta"
@@ -88,16 +100,17 @@ def test_uncertain_cross_source_match_is_recorded_without_merge(logged_in_client
         description=right_description,
     )
 
-    assert first["job_id"] != second["job_id"]
+    assert second["job_id"] is None
     cur = db_conn.cursor()
     cur.execute(
-        """SELECT status, confidence FROM job_dedup_matches
-           WHERE job_id_low = LEAST(%s, %s) AND job_id_high = GREATEST(%s, %s)""",
-        (first["job_id"], second["job_id"], first["job_id"], second["job_id"]),
+        "SELECT status, confidence FROM job_dedup_matches WHERE %s IN (job_id_low, job_id_high)",
+        (first["job_id"],),
     )
     status, confidence = cur.fetchone()
-    assert status == "candidate"
+    assert status == "auto_merged"
     assert confidence == 0.9
+    aliases = logged_in_client.get(f"/api/jobs/{first['job_id']}/aliases").json()
+    assert {alias["source"] for alias in aliases} == {"jobicy", "remotive"}
 
 
 def test_cross_source_matching_is_limited_to_21_days(logged_in_client, db_conn):
