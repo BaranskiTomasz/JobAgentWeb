@@ -1,3 +1,5 @@
+import json
+
 from db import dict_cursor
 
 
@@ -8,16 +10,18 @@ def record(conn, user_id: int, session_id: int, source: str, search_query: str, 
            known_url_filtered: int | None = None,
            global_matched: int | None = None, duplicate_found: int = 0,
            inserted_found: int | None = None, source_status: str = "ok",
-           source_error: str | None = None) -> None:
+           source_error: str | None = None,
+           observed_stages: list[str] | None = None) -> None:
     cur = conn.cursor()
     cur.execute(
         """INSERT INTO search_stats (user_id, session_id, source, search_query, location, cards_found, new_found,
-                                     upstream_found, query_matched, date_matched, geo_matched,
+                                     upstream_found, query_matched, date_matched, geo_matched, observed_stages,
                                      source_returned, known_url_filtered, global_matched, duplicate_found, inserted_found,
                                      source_status, source_error)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (user_id, session_id, source, search_query, location, cards_found, new_found,
-         upstream_found, query_matched, date_matched, geo_matched, source_returned,
+         upstream_found, query_matched, date_matched, geo_matched,
+         json.dumps(observed_stages) if observed_stages is not None else None, source_returned,
          known_url_filtered, global_matched, duplicate_found, inserted_found, source_status, source_error),
     )
 
@@ -36,6 +40,12 @@ def get_query_summary(conn, user_id: int, source: str) -> list[dict]:
                SUM(COALESCE(query_matched, cards_found))        AS query_matched,
                SUM(COALESCE(date_matched, cards_found))         AS date_matched,
                SUM(COALESCE(geo_matched, cards_found))          AS geo_matched,
+               jsonb_build_object(
+                   'upstream', SUM(CASE WHEN observed_stages ? 'upstream' THEN 1 ELSE 0 END),
+                   'query', SUM(CASE WHEN observed_stages ? 'query' THEN 1 ELSE 0 END),
+                   'date', SUM(CASE WHEN observed_stages ? 'date' THEN 1 ELSE 0 END),
+                   'geo', SUM(CASE WHEN observed_stages ? 'geo' THEN 1 ELSE 0 END)
+               )                                                AS observed_stages,
                SUM(COALESCE(source_returned, cards_found))      AS source_returned,
                SUM(COALESCE(known_url_filtered, 0))             AS known_url_filtered,
                SUM(COALESCE(global_matched, cards_found))       AS global_matched,

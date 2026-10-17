@@ -16,6 +16,7 @@ def record(body: SearchStatRecord, user: dict = Depends(get_current_user), conn=
         body.query_matched, body.date_matched, body.geo_matched,
         body.source_returned, body.known_url_filtered, body.global_matched, body.duplicate_found,
         body.inserted_found, body.source_status, body.source_error,
+        observed_stages=body.observed_stages,
     )
     return {"ok": True}
 

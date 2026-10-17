@@ -45,6 +45,26 @@ def test_summary_includes_search_funnel(logged_in_client):
     assert row["geo_matched"] == 12
 
 
+def test_observed_stages_round_trip_and_omitted_stages_remain_unknown(logged_in_client):
+    observed = logged_in_client.post("/api/search-stats", json={
+        "source": "jobscollider", "search_query": "backend", "location": "Poland",
+        "cards_found": 10, "new_found": 4, "upstream_found": 100,
+        "query_matched": 80, "date_matched": 30, "geo_matched": 12,
+        "observed_stages": ["upstream", "query", "date", "geo"],
+    })
+    unknown = logged_in_client.post("/api/search-stats", json={
+        "source": "jobscollider", "search_query": "backend", "location": "Germany",
+        "cards_found": 2, "new_found": 1,
+    })
+
+    assert observed.status_code == 200
+    assert unknown.status_code == 200
+    row = logged_in_client.get(
+        "/api/search-stats/summary", params={"source": "jobscollider"},
+    ).json()[0]
+    assert row["observed_stages"] == {"upstream": 1, "query": 1, "date": 1, "geo": 1}
+
+
 def test_isolated_per_user(logged_in_client, other_logged_in_client):
     logged_in_client.post("/api/search-stats", json={
         "source": "linkedin", "search_query": "q", "location": "Poland", "cards_found": 1, "new_found": 1,

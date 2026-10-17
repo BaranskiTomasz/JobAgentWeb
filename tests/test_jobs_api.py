@@ -118,6 +118,188 @@ def test_tracking_url_variants_are_deduplicated(logged_in_client):
     assert len(aliases.json()) == 2
 
 
+def test_canonical_url_collision_treats_url_identity_as_decisive_even_with_different_content(logged_in_client):
+    # These two URLs canonicalize to the identical value (www./scheme folded,
+    # utm_source stripped as a known tracking param, trailing slash
+    # normalized): both become https://example.com/jobs/{token}. Verified
+    # behavior: canonical URL match is checked first and is decisive, by
+    # design, the same mechanism test_tracking_url_variants_are_deduplicated
+    # already exercises, content is never consulted once the URL matches.
+    # This is intentional (a URL is the strongest identity signal available),
+    # not a bug, this test exists to make that explicit and catch a
+    # regression if canonicalization or insert ordering ever changes it.
+    token = uuid.uuid4().hex
+    first = _create(
+        logged_in_client,
+        title="Platform Engineer",
+        company=f"Acme {token}",
+        url=f"https://www.example.com/jobs/{token}/?utm_source=partner-a",
+        description="Build the internal platform used by engineering teams.",
+    )
+    second = _create(
+        logged_in_client,
+        title="Account Executive",
+        company=f"Globex {token}",
+        url=f"https://example.com/jobs/{token}?utm_source=partner-b",
+        description="Lead enterprise account growth across the European market.",
+    )
+
+    assert second["job_id"] is None
+    survivor = logged_in_client.get(f"/api/jobs/{first['job_id']}").json()
+    assert survivor["title"] == "Platform Engineer"
+
+
+def test_reused_source_id_with_missing_location_is_candidate_not_auto_merged(logged_in_client, db_conn):
+    token = uuid.uuid4().hex
+    first = _create(
+        logged_in_client,
+        company=f"Acme {token}",
+        location=None,
+        url=f"https://boards.greenhouse.io/acme/jobs/{token}",
+        source="greenhouse",
+        source_id="12345",
+        description="Build reliable backend systems for customer-facing products.",
+    )
+    second = _create(
+        logged_in_client,
+        company=f"Globex {token}",
+        location="Berlin, Germany",
+        url=f"https://boards.greenhouse.io/globex/jobs/{token}",
+        source="greenhouse",
+        source_id="12345",
+        description="Lead enterprise sales across Germany and Central Europe.",
+    )
+
+    assert second["job_id"] is not None
+    cur = db_conn.cursor()
+    cur.execute(
+        """SELECT status, match_method, confidence FROM job_dedup_matches
+             WHERE job_id_low = LEAST(%s, %s) AND job_id_high = GREATEST(%s, %s)""",
+        (first["job_id"], second["job_id"], first["job_id"], second["job_id"]),
+    )
+    assert cur.fetchone() == ("candidate", "source_requisition_conflict", 0.9)
+
+
+def test_repeated_description_template_does_not_merge_different_jobs(logged_in_client):
+    token = uuid.uuid4().hex
+    template = (
+        "We are an equal opportunity employer and welcome every qualified applicant. "
+        "Applicants are considered without regard to protected characteristics. "
+    ) * 8
+    first = _create(
+        logged_in_client,
+        title="Payroll Specialist",
+        company=f"Acme {token}",
+        location="Warsaw, Poland",
+        source="greenhouse",
+        url=f"https://boards.example/acme/{token}",
+        description=template,
+    )
+    second = _create(
+        logged_in_client,
+        title="Field Sales Manager",
+        company=f"Globex {token}",
+        location="Madrid, Spain",
+        source="linkedin",
+        url=f"https://linkedin.example/globex/{token}",
+        description=template,
+    )
+
+    assert second["job_id"] is not None
+    assert second["job_id"] != first["job_id"]
+
+
+def _create_late_dedup_pair(logged_in_client, other_logged_in_client):
+    token = uuid.uuid4().hex
+    first = _create(
+        logged_in_client,
+        company=f"Acme {token}",
+        location="Remote Europe",
+        source="greenhouse",
+        source_id=f"acme:{token}",
+        url=f"https://boards.greenhouse.io/acme/jobs/{token}",
+        description=None,
+    )
+    second_response = other_logged_in_client.post("/api/jobs", json={
+        "title": "Backend Engineer",
+        "company": f"Acme {token}",
+        "location": "Remote Europe",
+        "url": f"https://boards.greenhouse.io/acme/positions/{token}",
+        "source": "greenhouse",
+        "source_id": f"acme:{token}",
+        "description": None,
+    })
+    assert second_response.status_code == 200
+    second = second_response.json()
+    assert second["job_id"] is not None
+    return first["job_id"], second["job_id"]
+
+
+def test_late_dedup_moves_a_non_survivors_user_state(logged_in_client, other_logged_in_client):
+    # Dedup does not run at insert time (both postings exist independently
+    # right after _create_late_dedup_pair); it reruns on the next description
+    # or facts update for either side, see jobs_repo.update_description. With
+    # matching source identity/company/location that rerun crosses the
+    # auto-merge threshold immediately, so only ONE description patch should
+    # be issued here, whichever side arrives first consolidates the other.
+    first_id, second_id = _create_late_dedup_pair(logged_in_client, other_logged_in_client)
+    other_logged_in_client.patch(f"/api/jobs/{second_id}/score-and-status", json={
+        "score": 8.5, "reason": "strong fit", "status": "applied",
+    })
+    other_logged_in_client.patch(f"/api/jobs/{second_id}/would-apply", json={
+        "would_apply": True, "reason": "excellent role"},
+    )
+    description = "Build reliable distributed backend services in Python and PostgreSQL. " * 4
+    response = logged_in_client.patch(f"/api/jobs/{first_id}/description", json={"description": description})
+
+    assert response.status_code == 200
+    survivor_id = response.json()["id"]
+    assert survivor_id in {first_id, second_id}
+    moved = other_logged_in_client.get(f"/api/jobs/{survivor_id}").json()
+    assert moved["status"] == "applied"
+    assert moved["score"] == 8.5
+    assert moved["would_apply"] is True
+
+
+def test_late_dedup_keeps_each_users_state_isolated(logged_in_client, other_logged_in_client):
+    # Same single-trigger shape as above: both users' state is set on their
+    # own original id first, then exactly one description patch triggers the
+    # merge so each user's per-user state can be checked on the survivor.
+    first_id, second_id = _create_late_dedup_pair(logged_in_client, other_logged_in_client)
+    logged_in_client.patch(f"/api/jobs/{first_id}/score-and-status", json={
+        "score": 2.0, "reason": "weak fit", "status": "rejected",
+    })
+    logged_in_client.patch(f"/api/jobs/{first_id}/would-apply", json={
+        "would_apply": False, "reason": "missing experience"},
+    )
+    other_logged_in_client.patch(f"/api/jobs/{second_id}/score-and-status", json={
+        "score": 9.0, "reason": "excellent fit", "status": "applied",
+    })
+    other_logged_in_client.patch(f"/api/jobs/{second_id}/would-apply", json={
+        "would_apply": True, "reason": "ideal role"},
+    )
+    description = "Build reliable distributed backend services in Python and PostgreSQL. " * 4
+    response = logged_in_client.patch(f"/api/jobs/{first_id}/description", json={"description": description})
+    assert response.status_code == 200
+    survivor_id = response.json()["id"]
+
+    mine = logged_in_client.get(f"/api/jobs/{survivor_id}").json()
+    theirs = other_logged_in_client.get(f"/api/jobs/{survivor_id}").json()
+    assert (mine["score"], mine["status"], mine["would_apply"]) == (2.0, "rejected", False)
+    assert (theirs["score"], theirs["status"], theirs["would_apply"]) == (9.0, "applied", True)
+
+
+def test_late_dedup_consolidates_sequential_duplicate_inserts(logged_in_client, other_logged_in_client, db_conn):
+    first_id, second_id = _create_late_dedup_pair(logged_in_client, other_logged_in_client)
+    description = "Build reliable distributed backend services in Python and PostgreSQL. " * 4
+    survivor_id = jobs_repo.update_description(db_conn, first_id, description)
+    db_conn.commit()
+
+    cur = db_conn.cursor()
+    cur.execute("SELECT id FROM job_postings WHERE id IN (%s, %s)", (first_id, second_id))
+    assert cur.fetchall() == [(survivor_id,)]
+
+
 def test_stable_source_requisition_id_is_auto_merged(logged_in_client):
     token = uuid.uuid4().hex
     first = _create(

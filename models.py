@@ -253,6 +253,7 @@ class SearchStatRecord(BaseModel):
     query_matched: int | None = None
     date_matched: int | None = None
     geo_matched: int | None = None
+    observed_stages: list[Literal["upstream", "query", "date", "geo"]] | None = None
     source_returned: int | None = None
     known_url_filtered: int | None = None
     global_matched: int | None = None

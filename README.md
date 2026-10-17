@@ -27,7 +27,11 @@ The schema splits cleanly in two, defined in `migrations.py`:
 
 Versioned extraction metadata lives in `job_fact_extractions`: schema/model version, source-description hash, canonical facts, provenance, evidence, and indexed role/work fields. Repeated dimensions are normalized into `job_skills`, `job_compensation_bands`, and `job_eligibility`, while `job_postings.structured_data` remains a compatibility projection for existing evaluators. Catalog metadata stores both technology categories and role families, allowing broad engineering listings to be classified without pretending that the discovery query is evidence about the posting. `PUT /api/jobs/{job_id}/facts` replaces all projections atomically, and `GET /api/jobs/missing-facts?schema_version=N` drives safe re-extraction after a schema change. A catalog eligibility-only result is marked `_extraction_tier=catalog_gate`: it is complete for the shared catalog queue but deliberately remains pending for a user's personal extraction queue, which requires complete facts before scoring.
 
-Search statistics retain the full collection funnel and source outcome. The API reports upstream, query, date, geography, known-URL, matcher, duplicate, and insertion counts together with `ok`, `empty`, `partial`, or `error` status, so operators can locate recall losses without reconstructing them from logs.
+Search statistics retain the full collection funnel and source outcome. The API reports upstream, query, date, geography, known-URL, matcher, duplicate, and insertion counts together with `ok`, `empty`, `partial`, or `error` status, so operators can locate recall losses without reconstructing them from logs. Summary `observed_stages` reports how many searches genuinely measured each upstream/query/date/geo stage; omitted provenance is unknown, not observed.
+
+### Score and ranking fingerprints
+
+JobAgentWeb stores `score_fingerprint` and `ranking_fingerprint` as opaque values. It neither computes, validates, nor invalidates them, because their inputs belong to JobAgent. Consumers of scored or ranked data must compute the current expected fingerprint and compare it before treating a stored score or rank as fresh; otherwise an endpoint may return a stale value together with its old fingerprint.
 
 ### Auth
 
