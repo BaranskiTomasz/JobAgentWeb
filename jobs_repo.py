@@ -38,6 +38,14 @@ _JOB_FROM = """
 """
 
 
+def _personal_extraction_eligibility_sql() -> str:
+    return """AND EXISTS (
+        SELECT 1 FROM job_fact_extractions jfe
+         WHERE jfe.job_id = jp.id
+           AND COALESCE(jfe.facts->>'_extraction_tier', 'full') != 'catalog_gate'
+    )"""
+
+
 def _generate_id(url: str) -> str:
     return hashlib.md5(url.encode()).hexdigest()[:16]
 
@@ -708,6 +716,7 @@ def get_unscored(conn, user_id: int) -> list[dict]:
         f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
             WHERE ujs.user_id = %s AND ujs.status = 'new' AND ujs.score IS NULL
               AND jp.description IS NOT NULL AND jp.description != ''
+              {_personal_extraction_eligibility_sql()}
             ORDER BY ujs.created_at DESC""",
         (user_id,),
     )
@@ -720,6 +729,7 @@ def get_new_with_descriptions(conn, user_id: int) -> list[dict]:
         f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
             WHERE ujs.user_id = %s AND ujs.status = 'new'
               AND jp.description IS NOT NULL AND jp.description != ''
+              {_personal_extraction_eligibility_sql()}
             ORDER BY ujs.created_at DESC""",
         (user_id,),
     )
@@ -733,6 +743,7 @@ def get_dealbreaker_rejected_with_descriptions(conn, user_id: int) -> list[dict]
             WHERE ujs.user_id = %s AND ujs.status = 'auto_rejected'
               AND ujs.score_reason LIKE 'Dealbreaker:%%'
               AND jp.description IS NOT NULL AND jp.description != ''
+              {_personal_extraction_eligibility_sql()}
             ORDER BY ujs.updated_at DESC""",
         (user_id,),
     )
@@ -845,6 +856,7 @@ def get_jobs_for_ranking(conn, user_id: int, limit: int = 2000) -> list[dict]:
         f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
             WHERE ujs.user_id = %s AND ujs.status = 'new'
               AND jp.description IS NOT NULL AND jp.description != ''
+              {_personal_extraction_eligibility_sql()}
             ORDER BY ujs.created_at DESC LIMIT %s""",
         (user_id, limit),
     )

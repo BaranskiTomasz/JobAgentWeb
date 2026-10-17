@@ -59,10 +59,26 @@ def _match_score(left: dict, right: dict) -> tuple[str, float, dict] | None:
     left_source_identity = source_identity(left)
     right_source_identity = source_identity(right)
     if left_source_identity and left_source_identity == right_source_identity:
-        return "source_requisition", 1.0, {
+        companies_compatible = bool(
+            company_alias(left.get("company"))
+            and company_alias(left.get("company")) == company_alias(right.get("company"))
+        )
+        locations_compatible = _locations_compatible(left.get("location"), right.get("location"))
+        evidence = {
             "source_identity": left_source_identity,
+            "companies_compatible": companies_compatible,
+            "locations_compatible": locations_compatible,
             "left_source": left.get("source"),
             "right_source": right.get("source"),
+            "left_company": left.get("company"),
+            "right_company": right.get("company"),
+            "left_location": left.get("location"),
+            "right_location": right.get("location"),
+        }
+        if not (companies_compatible and locations_compatible):
+            return "source_requisition_conflict", 0.90, evidence
+        return "source_requisition", 1.0, {
+            **evidence,
         }
     if (left.get("source") or "").lower() == (right.get("source") or "").lower():
         return None

@@ -310,6 +310,28 @@ class TestJobAgentApiKeyAuth:
         owner_urls = client.get("/api/jobs/urls", headers={"X-JobAgent-Api-Key": "test-shared-secret"}).json()
         assert "https://example.com/apikey-test" in owner_urls["urls"]
 
+    def test_configured_user_session_cannot_access_automation_only_endpoints(self, client, user, monkeypatch):
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY", "test-shared-secret")
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", str(user["id"]))
+        login = client.post("/login", data={"username": user["username"], "password": user["password"]})
+        assert login.status_code in (200, 303)
+
+        response = client.post("/api/jobs/catalog", json={
+            "title": "Dev", "company": "Acme", "location": "Remote",
+            "url": "https://example.com/session-catalog-test", "source": "linkedin",
+        })
+        assert response.status_code == 403
+
+        response = client.post(
+            "/api/jobs/catalog",
+            headers={"X-JobAgent-Api-Key": "test-shared-secret"},
+            json={
+                "title": "Dev", "company": "Acme", "location": "Remote",
+                "url": "https://example.com/key-catalog-test", "source": "linkedin",
+            },
+        )
+        assert response.status_code == 200
+
     def test_nonexistent_configured_user_id_falls_back_to_session_check(self, client, monkeypatch):
         monkeypatch.setattr("deps.JOBAGENT_API_KEY", "test-shared-secret")
         monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", "999999")

@@ -143,6 +143,41 @@ def test_stable_source_requisition_id_is_auto_merged(logged_in_client):
     }
 
 
+def test_colliding_source_requisition_ids_are_candidates_not_auto_merged(logged_in_client, db_conn):
+    token = uuid.uuid4().hex
+    first = _create(
+        logged_in_client,
+        title="Backend Engineer",
+        company=f"Acme {token}",
+        location="Remote Europe",
+        url=f"https://boards.greenhouse.io/acme/jobs/{token}",
+        source="greenhouse",
+        source_id="12345",
+        description="Build reliable backend systems.",
+    )
+    second = _create(
+        logged_in_client,
+        title="Sales Director",
+        company=f"Globex {token}",
+        location="New York, United States",
+        url=f"https://boards.greenhouse.io/globex/jobs/{token}",
+        source="greenhouse",
+        source_id="12345",
+        description="Lead enterprise sales across North America.",
+    )
+
+    assert second["job_id"] is not None
+    assert second["job_id"] != first["job_id"]
+    cur = db_conn.cursor()
+    cur.execute(
+        """SELECT status, match_method, confidence, survivor_job_id
+             FROM job_dedup_matches
+            WHERE job_id_low = LEAST(%s, %s) AND job_id_high = GREATEST(%s, %s)""",
+        (first["job_id"], second["job_id"], first["job_id"], second["job_id"]),
+    )
+    assert cur.fetchone() == ("candidate", "source_requisition_conflict", 0.9, None)
+
+
 def test_identical_cross_source_content_is_not_merged_without_stable_identity(logged_in_client):
     token = uuid.uuid4().hex
     description = "Build reliable distributed backend services in Python and PostgreSQL. " * 4

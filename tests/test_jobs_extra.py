@@ -268,9 +268,21 @@ def test_ranking_fingerprint_round_trips_in_batch(logged_in_client):
     assert logged_in_client.get(f"/api/jobs/{job_id}").json()["ranking_fingerprint"] == "ranking-v1"
 
 
-def test_get_new_unscored_new_with_descriptions(logged_in_client):
+def _store_extraction(db_conn, job_id, tier="full"):
+    cur = db_conn.cursor()
+    cur.execute(
+        """INSERT INTO job_fact_extractions
+               (job_id, schema_version, model, content_hash, facts, provenance)
+           VALUES (%s, 4, 'extract-test', %s, %s::jsonb, '{}'::jsonb)""",
+        (job_id, f"hash-{job_id}", f'{{"_extraction_tier": "{tier}"}}'),
+    )
+    db_conn.commit()
+
+
+def test_get_new_unscored_new_with_descriptions(logged_in_client, db_conn):
     with_desc = _create(logged_in_client, url="https://example.com/jobs/a")["job_id"]
     no_desc = _create(logged_in_client, url="https://example.com/jobs/b", description=None)["job_id"]
+    _store_extraction(db_conn, with_desc)
 
     new_ids = {j["id"] for j in logged_in_client.get("/api/jobs/new").json()}
     assert new_ids == {with_desc, no_desc}
@@ -282,10 +294,43 @@ def test_get_new_unscored_new_with_descriptions(logged_in_client):
     assert with_desc_ids == {with_desc}
 
 
-def test_for_ranking(logged_in_client):
+def test_for_ranking(logged_in_client, db_conn):
     job_id = _create(logged_in_client)["job_id"]
+    _store_extraction(db_conn, job_id)
     rows = logged_in_client.get("/api/jobs/for-ranking").json()
     assert [r["id"] for r in rows] == [job_id]
+
+
+def test_catalog_gate_facts_are_excluded_from_personal_scoring_and_ranking_feeds(logged_in_client, db_conn, user):
+    gated_new = _create(logged_in_client, url="https://example.com/jobs/gated-new")["job_id"]
+    complete_new = _create(logged_in_client, url="https://example.com/jobs/complete-new")["job_id"]
+    gated_dealbreaker = _create(logged_in_client, url="https://example.com/jobs/gated-dealbreaker")["job_id"]
+    complete_dealbreaker = _create(logged_in_client, url="https://example.com/jobs/complete-dealbreaker")["job_id"]
+    _store_extraction(db_conn, gated_new, "catalog_gate")
+    _store_extraction(db_conn, complete_new)
+    _store_extraction(db_conn, gated_dealbreaker, "catalog_gate")
+    _store_extraction(db_conn, complete_dealbreaker)
+    cur = db_conn.cursor()
+    cur.execute(
+        """UPDATE user_job_states
+               SET status = 'auto_rejected', score_reason = 'Dealbreaker: incompatible location'
+             WHERE user_id = %s AND job_id IN (%s, %s)""",
+        (user["id"], gated_dealbreaker, complete_dealbreaker),
+    )
+    db_conn.commit()
+
+    assert complete_new in {job["id"] for job in logged_in_client.get("/api/jobs/unscored").json()}
+    assert gated_new not in {job["id"] for job in logged_in_client.get("/api/jobs/unscored").json()}
+    assert complete_new in {job["id"] for job in logged_in_client.get("/api/jobs/new-with-descriptions").json()}
+    assert gated_new not in {job["id"] for job in logged_in_client.get("/api/jobs/new-with-descriptions").json()}
+    assert complete_new in {job["id"] for job in logged_in_client.get("/api/jobs/for-ranking").json()}
+    assert gated_new not in {job["id"] for job in logged_in_client.get("/api/jobs/for-ranking").json()}
+    assert complete_dealbreaker in {
+        job["id"] for job in logged_in_client.get("/api/jobs/dealbreaker-rejected-with-descriptions").json()
+    }
+    assert gated_dealbreaker not in {
+        job["id"] for job in logged_in_client.get("/api/jobs/dealbreaker-rejected-with-descriptions").json()
+    }
 
 
 def test_examples_and_feedback(logged_in_client):
