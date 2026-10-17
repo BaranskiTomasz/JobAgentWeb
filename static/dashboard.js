@@ -229,92 +229,6 @@ async function loadCost() {
   document.getElementById('cost-total').textContent  = u.total_cost_usd != null ? `$${u.total_cost_usd.toFixed(2)}` : '—';
 }
 
-// ── Preference profile / "what the agent learned" (read-only) ─────────────────
-
-function _humanDim(dim) { return String(dim || '').replace(/_/g, ' '); }
-function _humanValue(v) { return v ? String(v).replace(/_/g, ' ') : ''; }
-
-const _SIGNAL_TAG_LABEL = { ACCEPT: 'Likes', REJECT: 'Avoids', INFER: 'Inferred', NEUTRAL: 'No signal' };
-const _SIGNAL_TAG_CLASS = { ACCEPT: 'acc', REJECT: 'rej', INFER: 'inf', NEUTRAL: 'neu' };
-
-function _signalMainText(s) {
-  if (s.note) return s.note;
-  const val = _humanValue(s.value);
-  const dim = _humanDim(s.dim);
-  if (s.type === 'NEUTRAL') return `No clear pattern yet on ${dim}.`;
-  if (s.type === 'INFER') return `Likely prefers ${dim}${val ? ': ' + val : ''}, based on limited evidence.`;
-  return `${s.type === 'ACCEPT' ? 'Favors' : 'Avoids'} ${dim}${val ? ': ' + val : ''}.`;
-}
-
-function _signalMetaText(s) {
-  const parts = [_humanDim(s.dim) + (s.value ? ': ' + _humanValue(s.value) : '')];
-  if (s.conf) parts.push(s.conf.toLowerCase() + ' confidence');
-  if (s.n_match != null && s.n_total != null) parts.push(`${s.n_match}/${s.n_total} examples`);
-  else if (s.n_total != null) parts.push(`from ${s.n_total} examples`);
-  return parts.join(' · ');
-}
-
-function _renderSignalChips(signals) {
-  const notable = (signals || []).filter(s => s.type === 'ACCEPT' || s.type === 'REJECT' || s.type === 'INFER').slice(0, 6);
-  if (!notable.length) return '<span class="lc-empty">No strong signals yet, apply/reject a few more jobs, then distill locally.</span>';
-  return notable.map(s => {
-    const cls = _SIGNAL_TAG_CLASS[s.type] || 'inf';
-    return `<div class="sig"><span class="tag ${cls}">${_SIGNAL_TAG_LABEL[s.type] || s.type}</span><span class="txt">${esc(_signalMainText(s))}</span></div>`;
-  }).join('');
-}
-
-function _renderSignalList(signals) {
-  if (!signals || !signals.length) return '';
-  return `<div class="pref-list">${signals.map(s => {
-    const cls = _SIGNAL_TAG_CLASS[s.type] || 'inf';
-    const neutralCls = s.type === 'NEUTRAL' ? ' neutral' : '';
-    return `
-      <div class="pref-row${neutralCls}">
-        <span class="pref-tag ${cls}">${_SIGNAL_TAG_LABEL[s.type] || s.type}</span>
-        <div class="pref-body">
-          <div class="pref-main">${esc(_signalMainText(s))}</div>
-          <div class="pref-meta">${esc(_signalMetaText(s))}</div>
-        </div>
-      </div>`;
-  }).join('')}</div>`;
-}
-
-async function _loadLearnedCard() {
-  const el = document.getElementById('lc-signals');
-  try {
-    const r = await fetch('/api/preference-profile');
-    if (_redirectIfUnauthenticated(r)) return;
-    const d = await r.json();
-    if (!d.profile) { el.innerHTML = '<span class="lc-empty">No profile yet, run distillation locally in JobAgent.</span>'; return; }
-    if (!d.profile.signals || !d.profile.signals.length) { el.innerHTML = '<span class="lc-empty">' + esc((d.profile.content || '').slice(0, 200)) + '…</span>'; return; }
-    el.innerHTML = _renderSignalChips(d.profile.signals);
-  } catch {
-    el.innerHTML = '<span class="lc-empty">Error loading profile.</span>';
-  }
-}
-
-function openLearnedModal() {
-  document.getElementById('learned-modal').classList.add('open');
-  _loadLearnedFull();
-}
-function closeLearnedModal() { document.getElementById('learned-modal').classList.remove('open'); }
-
-async function _loadLearnedFull() {
-  const meta = document.getElementById('learned-meta');
-  const full = document.getElementById('learned-full');
-  try {
-    const r = await fetch('/api/preference-profile');
-    const d = await r.json();
-    if (!d.profile) { meta.textContent = ''; full.textContent = 'No profile yet. Run distillation locally in JobAgent.'; return; }
-    const p = d.profile;
-    const updated = new Date(p.updated_at.replace(' ', 'T') + 'Z').toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    meta.innerHTML = `<span>Applied: ${p.applied_count}</span><span>Rejected: ${p.rejected_count}</span><span>Updated: ${updated}</span>`;
-    full.innerHTML = (p.signals && p.signals.length) ? _renderSignalList(p.signals) : esc(p.content);
-  } catch {
-    full.textContent = 'Error loading profile.';
-  }
-}
-
 // ── Eval / Calibration modal ────────────────────────────────────────────────────
 
 async function openEvalModal() {
@@ -1248,4 +1162,3 @@ document.getElementById('sort').addEventListener('change', render);
 
 loadStats();
 _loadSources().then(loadJobs);
-_loadLearnedCard();

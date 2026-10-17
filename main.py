@@ -142,6 +142,14 @@ def preferences_page(request: Request, conn=Depends(get_db)):
     return templates.TemplateResponse(request, "preferences.html", {"user": user})
 
 
+@app.get("/preference-profile", response_class=HTMLResponse)
+def preference_profile_page(request: Request, conn=Depends(get_db)):
+    user = _require_user(request, conn)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    return templates.TemplateResponse(request, "preference_profile.html", {"user": user})
+
+
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}

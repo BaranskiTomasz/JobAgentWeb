@@ -23,6 +23,7 @@
         <a href="/">Dashboard</a>
         <a href="/jobs">Browse jobs</a>
         <a href="/preferences">Preferences</a>
+        <a href="/preference-profile">Preference profile</a>
         <a href="/how-it-works">How it works</a>
         {% if user.is_admin %}<a href="/admin">Admin</a>{% endif %}
         <a href="https://github.com/BaranskiTomasz/JobAgent" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a>
@@ -88,20 +89,6 @@
       </div>
     </div>
 
-  </div>
-
-  <div class="panel learned-card" id="learned-card">
-    <div class="lc-head">
-      <div class="lc-title">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/><path d="M9 21h6M10 17h4"/></svg>
-        What the agent learned
-        <span class="info"><button type="button" class="info-btn">?</button>
-          <span class="tip">Distilled locally by JobAgent from the jobs you've applied to and rejected. Read-only here, the next local distillation run refreshes it.</span>
-        </span>
-      </div>
-      <div class="lc-sub"><a href="#" onclick="openLearnedModal(); return false;">View full profile →</a></div>
-    </div>
-    <div class="lc-signals" id="lc-signals"><span class="lc-empty">No profile yet, run distillation locally in JobAgent.</span></div>
   </div>
 
   <div class="tabs" id="tabs">
@@ -183,20 +170,6 @@
     <div class="modal-hd"><h2><svg class="tt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg> Calibration report</h2><button class="modal-close" onclick="closeEvalModal()">✕</button></div>
     <div class="modal-bd" id="eval-body"><p>Loading…</p></div>
     <div class="modal-ft"><button class="btn-ghost" onclick="closeEvalModal()">Close</button></div>
-  </div>
-</div>
-
-<!-- Learned (full profile) modal, read-only, no refresh: distillation runs in JobAgent locally -->
-<div class="overlay" id="learned-modal">
-  <div class="modal">
-    <div class="modal-hd"><h2>Preference profile</h2><button class="modal-close" onclick="closeLearnedModal()">✕</button></div>
-    <div class="modal-bd">
-      <div class="learned-meta-bar" id="learned-meta"></div>
-      <div class="learned-full" id="learned-full">No profile yet.</div>
-    </div>
-    <div class="modal-ft">
-      <button class="btn-ghost" onclick="closeLearnedModal()">Close</button>
-    </div>
   </div>
 </div>
 
