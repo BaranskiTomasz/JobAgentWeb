@@ -20,6 +20,10 @@ CATALOG_QUERIES = (
     "Data Engineer", "Machine Learning Engineer",
 )
 CATALOG_COUNTRIES = ("Poland", "Bulgaria")
+# Bounds how much of the backlog one run catches up on, not just today's own
+# finds - generous since a Haiku extraction call is cheap relative to a daily
+# cadence, but still bounded so a huge backlog can't make one run unbounded.
+_EXTRACTION_BACKLOG_LIMIT = 500
 
 
 def queries_for_slot(slot: int, per_run: int = 2) -> list[str]:
@@ -113,8 +117,12 @@ def run_catalog_collection(conn, *, days_back: int = 7, max_jobs: int | None = N
                 logger.exception("could not record catalog source failure: %s", source_id)
     extracted = 0
     try:
-        pending_facts = [job for job in jobs_repo.get_shared_missing_facts(conn, FACT_SCHEMA_VERSION, len(job_ids) or 1)
-                         if job["id"] in set(job_ids)]
+        # Not scoped to this run's own job_ids: a prior run's extraction can
+        # fail wholesale (an Anthropic outage, say) and leave postings behind
+        # with missing facts that nothing will ever re-insert, since they're
+        # already in known_urls. This picks up that backlog too, not just
+        # today's new postings.
+        pending_facts = jobs_repo.get_shared_missing_facts(conn, FACT_SCHEMA_VERSION, _EXTRACTION_BACKLOG_LIMIT)
         extracted = extractor(conn, pending_facts, catalog=True) if pending_facts else 0
     except Exception:
         logger.exception("catalog extraction stage failed")

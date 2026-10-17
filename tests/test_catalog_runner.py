@@ -57,6 +57,30 @@ def test_catalog_runner_deduplicates_records_stats_and_extracts(monkeypatch):
     assert extracted == [[{"id": "new-job", "description": "x"}]]
 
 
+def test_catalog_runner_extracts_backlog_from_a_prior_run_not_just_this_ones_finds(monkeypatch):
+    # A prior run's extraction can fail wholesale (an Anthropic outage, say)
+    # and leave postings stuck with missing facts forever, since they're
+    # already in known_urls and nothing will re-insert them. This run finds
+    # nothing new of its own but should still pick up that old backlog.
+    extracted = []
+    monkeypatch.setattr(catalog_runner, "available", lambda: ["example"])
+    monkeypatch.setattr(catalog_runner, "make", lambda *_args, **_kwargs: _Source([]))
+    monkeypatch.setattr(catalog_runner.jobs_repo, "get_all_shared_urls", lambda _conn: set())
+    monkeypatch.setattr(catalog_runner.jobs_repo, "insert", lambda *_args, **_kwargs: {"job_id": None, "posting_created": False})
+    monkeypatch.setattr(
+        catalog_runner.jobs_repo, "get_shared_missing_facts",
+        lambda *_args: [{"id": "stuck-from-earlier-run", "description": "x"}],
+    )
+    monkeypatch.setattr(catalog_runner.search_stats_repo, "record", lambda *_args, **_kwargs: None)
+    result = catalog_runner.run_catalog_collection(
+        SimpleNamespace(commit=lambda: None), source_ids=["example"], slot=0,
+        extractor=lambda _conn, jobs, **_kwargs: extracted.append(jobs) or len(jobs),
+    )
+    assert result["jobs_new"] == 0
+    assert result["extracted"] == 1
+    assert extracted == [[{"id": "stuck-from-earlier-run", "description": "x"}]]
+
+
 def test_catalog_runner_continues_when_source_raises(monkeypatch):
     stats = []
     monkeypatch.setattr(catalog_runner.jobs_repo, "get_all_shared_urls", lambda _conn: set())
