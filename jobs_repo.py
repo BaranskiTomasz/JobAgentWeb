@@ -22,19 +22,20 @@ _JOB_COLUMNS = """
     ujs.created_at, ujs.updated_at,
     comp.total_count AS company_total_count, comp.applied_count AS company_applied_count
 """
-# Per-company stats (this user's own postings only), correlated via ujs.user_id/jp.company
+# Per-company stats (this user's own postings only), grouped by ujs.user_id/jp.company
 # rather than a bound parameter, so every _JOB_FROM call site gets it for free with no
-# extra param plumbing. A plain aggregate subquery always returns exactly one row even
-# with zero matches (COUNT(*) = 0), so this is a plain JOIN LATERAL, not a LEFT JOIN.
+# extra param plumbing.
 _JOB_FROM = """
     FROM job_postings jp
     JOIN user_job_states ujs ON ujs.job_id = jp.id
-    JOIN LATERAL (
-        SELECT COUNT(*) AS total_count, COUNT(*) FILTER (WHERE ujs2.status = 'applied') AS applied_count
+    JOIN (
+        SELECT ujs2.user_id AS user_id, jp2.company AS company,
+               COUNT(*) AS total_count,
+               COUNT(*) FILTER (WHERE ujs2.status = 'applied') AS applied_count
         FROM job_postings jp2
         JOIN user_job_states ujs2 ON ujs2.job_id = jp2.id
-        WHERE ujs2.user_id = ujs.user_id AND jp2.company = jp.company
-    ) comp ON TRUE
+        GROUP BY ujs2.user_id, jp2.company
+    ) comp ON comp.user_id = ujs.user_id AND comp.company = jp.company
 """
 
 

@@ -414,6 +414,8 @@ async function _loadSources() {
   }
 }
 
+let _loadJobsAbort = null;
+
 async function loadJobs() {
   const query = document.getElementById('search').value;
   const source = document.getElementById('source-filter').value;
@@ -421,11 +423,17 @@ async function loadJobs() {
   if (query) params.set('query', query);
   if (source) params.set('source', source);
 
+  // A second call (tab/source/search change) while one is still in flight used to
+  // leave both running, doubling load for no benefit since only the latest matters.
+  if (_loadJobsAbort) _loadJobsAbort.abort();
+  _loadJobsAbort = new AbortController();
+
   try {
-    const r = await fetch('/api/jobs?' + params);
+    const r = await fetch('/api/jobs?' + params, { signal: _loadJobsAbort.signal });
     if (_redirectIfUnauthenticated(r)) return;
     ALL_JOBS = await r.json();
-  } catch {
+  } catch (e) {
+    if (e.name === 'AbortError') return;
     showToast('Failed to load jobs, is the server running?');
     return;
   }

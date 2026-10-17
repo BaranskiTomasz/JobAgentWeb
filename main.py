@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 import jobs_repo
@@ -58,6 +59,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="JobAgentWeb", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=SESSION_HTTPS_ONLY)
+# /api/jobs responses (full description + structured_data text per row) run several
+# MB uncompressed; gzip cuts that drastically since it's almost all repetitive text/JSON.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(jobs.router)
