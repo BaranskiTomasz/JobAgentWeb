@@ -652,9 +652,18 @@ def update_facts(
         if not isinstance(item, dict) or not item.get("country_code"):
             continue
         country_code = str(item["country_code"]).upper()
+        # The extraction model occasionally returns a malformed (non-list)
+        # value here; psycopg2 adapts whatever reaches this array column
+        # literally, so a bad value raises "malformed array literal" and (if
+        # the caller doesn't roll back) poisons every later statement on the
+        # same connection.
+        engagement_modes = item.get("engagement_modes")
+        if not isinstance(engagement_modes, list):
+            engagement_modes = []
+        engagement_modes = [mode for mode in engagement_modes if isinstance(mode, str)]
         eligibility[country_code] = (
             job_id, country_code, item.get("eligible"), float(item.get("confidence") or 0.5),
-            item.get("engagement_modes") or [], item.get("evidence"),
+            engagement_modes, item.get("evidence"),
         )
     if eligibility:
         execute_values(

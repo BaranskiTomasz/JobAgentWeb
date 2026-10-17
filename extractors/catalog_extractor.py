@@ -681,5 +681,11 @@ def run_extraction(conn, jobs: list[dict], *, catalog: bool = False) -> int:
                 "  Extraction skipped: %s @ %s, %s",
                 job.get("title"), job.get("company"), error,
             )
+            # A failed statement (a bad value hitting a column constraint, say)
+            # leaves this shared connection's transaction aborted - every later
+            # statement on it raises the same "current transaction is aborted"
+            # error otherwise, cascading this one job's failure into every
+            # job still left in the batch.
+            conn.rollback()
 
     return updated

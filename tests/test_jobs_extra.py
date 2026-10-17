@@ -120,6 +120,30 @@ def test_versioned_facts_are_normalized_and_removed_from_missing_queue(logged_in
     assert cur.fetchone() == ("PL", True, ["b2b"])
 
 
+def test_malformed_engagement_modes_is_dropped_instead_of_poisoning_the_write(logged_in_client, db_conn, user, monkeypatch):
+    # The extraction model occasionally returns a non-list value here; psycopg2
+    # adapts whatever reaches this array column literally, so a bad value used
+    # to raise "malformed array literal" and abort the whole facts write.
+    job_id = _create(logged_in_client)["job_id"]
+    monkeypatch.setattr("deps.JOBAGENT_API_KEY", "facts-test-key")
+    monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", str(user["id"]))
+    response = logged_in_client.put(f"/api/jobs/{job_id}/facts", headers={"X-JobAgent-Api-Key": "facts-test-key"}, json={
+        "schema_version": 2, "model": "extract-test", "content_hash": "abc123",
+        "facts": {
+            "country_eligibility": [{
+                "country_code": "PL", "eligible": True, "engagement_modes": "[]</contract_types>",
+                "confidence": 0.9, "evidence": "malformed model output",
+            }],
+        },
+        "provenance": {},
+    })
+    assert response.status_code == 200
+
+    cur = db_conn.cursor()
+    cur.execute("SELECT country_code, eligible, engagement_modes FROM job_eligibility WHERE job_id = %s", (job_id,))
+    assert cur.fetchone() == ("PL", True, [])
+
+
 def test_missing_facts_excludes_jobs_older_than_max_age(logged_in_client, db_conn):
     job_id = _create(logged_in_client)["job_id"]
     cur = db_conn.cursor()
