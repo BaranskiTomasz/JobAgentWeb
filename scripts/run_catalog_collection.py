@@ -1,5 +1,9 @@
 """Run the public catalog collector once from the server environment."""
 import logging
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from collectors.catalog_runner import run_catalog_collection
 from db import _get_pool
