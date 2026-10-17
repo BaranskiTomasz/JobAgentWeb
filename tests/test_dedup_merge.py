@@ -1,5 +1,7 @@
 import uuid
 
+import dedup_repo
+
 
 def _create(client, *, source, url, company, description=None, source_id=None):
     response = client.post("/api/jobs", json={
@@ -146,3 +148,44 @@ def test_cross_source_matching_is_limited_to_21_days(logged_in_client, db_conn):
         (old["job_id"], current["job_id"], old["job_id"], current["job_id"]),
     )
     assert cur.fetchone()[0] == 0
+
+
+def test_merging_overlapping_users_with_a_score_breakdown_does_not_crash(logged_in_client, db_conn):
+    # score_breakdown is JSONB: dict_cursor hands a merge's SELECT * back a
+    # real dict, but psycopg2 can't adapt a bare dict for the later UPDATE -
+    # observed live clearing a backlog of real pending candidates, wherever
+    # the same user had scored both sides of a pair before they got merged.
+    # Different companies so this pair doesn't match (and auto-merge) at
+    # insert time already - the merge below is forced directly instead, to
+    # isolate the merge mechanics this test actually cares about.
+    token = uuid.uuid4().hex
+    first = _create(
+        logged_in_client, source="jobicy", url=f"https://jobicy.example/{token}",
+        company=f"Acme {token}", description="Role one.",
+    )
+    second = _create(
+        logged_in_client, source="remotive", url=f"https://remotive.example/{token}",
+        company=f"Globex {token}", description="Role two.",
+    )
+    assert first["job_id"] != second["job_id"]
+    assert second["job_id"] is not None
+
+    for job in (first, second):
+        resp = logged_in_client.patch(f"/api/jobs/{job['job_id']}/score", json={
+            "score": 7.5, "reason": "Good fit", "breakdown": {"stack": 9, "seniority": 7},
+        })
+        assert resp.status_code == 200
+
+    result = dedup_repo.merge_jobs(
+        db_conn, first["job_id"], second["job_id"],
+        survivor_job_id=first["job_id"], match_method="manual_merge", confidence=1.0,
+    )
+    db_conn.commit()
+    assert result["survivor_job_id"] == first["job_id"]
+
+    cur = db_conn.cursor()
+    cur.execute(
+        "SELECT score_breakdown::text FROM user_job_states WHERE job_id = %s",
+        (first["job_id"],),
+    )
+    assert cur.fetchone()[0] is not None

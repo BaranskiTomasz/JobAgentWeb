@@ -309,6 +309,12 @@ def _merge_user_states(cur, survivor_id: str, loser_id: str) -> set[int]:
         )
         for field in fields:
             value = primary.get(field) if primary.get(field) is not None else secondary.get(field)
+            # score_breakdown is JSONB: dict_cursor hands it back as a dict,
+            # but psycopg2 won't adapt a plain dict for a write - it has to
+            # be serialized again, same as every other JSONB write in this
+            # file.
+            if field == "score_breakdown" and isinstance(value, dict):
+                value = json.dumps(value, ensure_ascii=False)
             assignments.append(f"{field} = %s")
             values.append(value)
         status = current["status"] if _state_rank(current["status"]) >= _state_rank(old["status"]) else old["status"]
