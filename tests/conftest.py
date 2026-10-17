@@ -15,6 +15,11 @@ os.environ.setdefault("SESSION_HTTPS_ONLY", "false")
 os.environ.setdefault("INVITE_CODE", "test-invite-code")
 os.environ.setdefault("SECRET_KEY", "test-only-secret-key-not-real-923nf")
 os.environ.setdefault("DISABLE_RATE_LIMIT", "true")  # most tests register/log in far more than a real client would
+# Real bcrypt cost (12 rounds) takes ~2.3s per hash on this machine; nearly
+# every test hashes/verifies 2-4 passwords in fixture setup alone. Must be
+# set before `security` is imported below. Production never sets this, so
+# it keeps the real default.
+os.environ.setdefault("BCRYPT_ROUNDS", "4")
 
 import pytest
 from fastapi.testclient import TestClient
