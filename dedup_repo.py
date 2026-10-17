@@ -202,6 +202,58 @@ def record_match(conn, match: dict) -> dict:
     return {"id": row[0], "status": row[1]}
 
 
+def list_pending_candidates(conn, limit: int = 100) -> list[dict]:
+    cur = dict_cursor(conn)
+    cur.execute(
+        """SELECT matches.id, matches.confidence, matches.match_method,
+                  matches.evidence, matches.created_at,
+                  low.id AS low_id, low.title AS low_title,
+                  low.company AS low_company, low.location AS low_location,
+                  low.source AS low_source, low.url AS low_url,
+                  low.posted_at AS low_posted_at,
+                  high.id AS high_id, high.title AS high_title,
+                  high.company AS high_company, high.location AS high_location,
+                  high.source AS high_source, high.url AS high_url,
+                  high.posted_at AS high_posted_at
+             FROM job_dedup_matches matches
+             JOIN job_postings low ON low.id = matches.job_id_low
+             JOIN job_postings high ON high.id = matches.job_id_high
+            WHERE matches.status = 'candidate'
+            ORDER BY matches.confidence DESC, matches.created_at DESC
+            LIMIT %s""",
+        (max(0, int(limit)),),
+    )
+    candidates = []
+    for row in cur.fetchall():
+        item = dict(row)
+        candidates.append({
+            "id": item["id"],
+            "confidence": item["confidence"],
+            "match_method": item["match_method"],
+            "evidence": item["evidence"],
+            "created_at": item["created_at"],
+            "job_low": {
+                "id": item["low_id"],
+                "title": item["low_title"],
+                "company": item["low_company"],
+                "location": item["low_location"],
+                "source": item["low_source"],
+                "url": item["low_url"],
+                "posted_at": item["low_posted_at"],
+            },
+            "job_high": {
+                "id": item["high_id"],
+                "title": item["high_title"],
+                "company": item["high_company"],
+                "location": item["high_location"],
+                "source": item["high_source"],
+                "url": item["high_url"],
+                "posted_at": item["high_posted_at"],
+            },
+        })
+    return candidates
+
+
 def _merge_json(left: Any, right: Any) -> Any:
     if isinstance(left, dict) and isinstance(right, dict):
         return {

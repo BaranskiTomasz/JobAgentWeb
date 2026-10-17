@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JobAgentWeb — Dedup review</title>
+<link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="wordmark">JobAgent<span class="dot">.</span></span>
+    <span class="sub">Dedup review</span>
+  </div>
+  <div class="top-actions">
+    <a class="btn-ghost" href="/admin">Back to admin</a>
+    <a class="btn-ghost" href="/jobs">Browse jobs</a>
+    <a class="btn-ghost" href="/">Back to dashboard</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="panel" style="margin-top: 20px;">
+    <div class="panel-label">Pending candidates ({{ candidates|length }})</div>
+    {% if not candidates %}
+    <p class="lc-empty">No pending candidates.</p>
+    {% endif %}
+  </div>
+
+  {% for candidate in candidates %}
+  <div class="panel" style="margin-top: 20px;">
+    <div class="panel-label">
+      <span>{{ "%.0f"|format(candidate.confidence * 100) }}% confidence</span>
+      <span class="mono">{{ candidate.match_method }}</span>
+    </div>
+    <table class="div-tbl" style="width:100%; margin-top: 10px;">
+      <thead>
+        <tr><th>{{ candidate.job_low.source }}</th><th>{{ candidate.job_high.source }}</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>{{ candidate.job_low.title }}</td><td>{{ candidate.job_high.title }}</td></tr>
+        <tr><td>{{ candidate.job_low.company or "—" }}</td><td>{{ candidate.job_high.company or "—" }}</td></tr>
+        <tr><td>{{ candidate.job_low.location or "—" }}</td><td>{{ candidate.job_high.location or "—" }}</td></tr>
+        <tr>
+          <td><a href="{{ candidate.job_low.url }}" target="_blank" rel="noopener noreferrer">Open job</a></td>
+          <td><a href="{{ candidate.job_high.url }}" target="_blank" rel="noopener noreferrer">Open job</a></td>
+        </tr>
+      </tbody>
+    </table>
+
+    {% if candidate.evidence %}
+    <div style="margin-top: 14px;">
+      <span class="cap">Evidence:</span>
+      {% for key, value in candidate.evidence.items() %}
+      <span class="mono">{{ key }}: {{ value }}</span>{% if not loop.last %}<span class="cap"> · </span>{% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:16px;">
+      <form method="post" action="/admin/dedup/{{ candidate.id }}/merge" onsubmit="return confirm('Merge these jobs and keep the {{ candidate.job_low.source }} posting? This cannot be undone.');">
+        <input type="hidden" name="job_id_low" value="{{ candidate.job_low.id }}">
+        <input type="hidden" name="job_id_high" value="{{ candidate.job_high.id }}">
+        <input type="hidden" name="survivor_job_id" value="{{ candidate.job_low.id }}">
+        <button type="submit" class="btn-ghost">Keep {{ candidate.job_low.source }}, merge other in</button>
+      </form>
+      <form method="post" action="/admin/dedup/{{ candidate.id }}/merge" onsubmit="return confirm('Merge these jobs and keep the {{ candidate.job_high.source }} posting? This cannot be undone.');">
+        <input type="hidden" name="job_id_low" value="{{ candidate.job_low.id }}">
+        <input type="hidden" name="job_id_high" value="{{ candidate.job_high.id }}">
+        <input type="hidden" name="survivor_job_id" value="{{ candidate.job_high.id }}">
+        <button type="submit" class="btn-ghost">Keep {{ candidate.job_high.source }}, merge other in</button>
+      </form>
+      <form method="post" action="/admin/dedup/{{ candidate.id }}/reject">
+        <button type="submit" class="btn-ghost">Not a duplicate</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+</body>
+</html>
