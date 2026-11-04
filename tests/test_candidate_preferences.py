@@ -1,22 +1,21 @@
 def test_create_and_get_active(logged_in_client):
     resp = logged_in_client.post("/api/candidate-preferences", json={
         "cv_profile_id": None,
-        "fields": {"work_mode": ["remote", "hybrid"], "salary_min": 15000},
+        "fields": {"work_mode": ["remote"], "salary_min": 15000},
     })
     assert resp.status_code == 200
     pref_id = resp.json()["id"]
 
     active = logged_in_client.get("/api/candidate-preferences/active").json()
     assert active["id"] == pref_id
-    assert active["work_mode"] == ["remote", "hybrid"]
+    assert active["work_mode"] == ["remote"]
     assert active["salary_min"] == 15000
 
 
-def test_remote_work_country_and_employer_markets_are_stored_separately(logged_in_client):
+def test_remote_work_country_is_stored_with_other_preferences(logged_in_client):
     response = logged_in_client.post("/api/candidate-preferences", json={"fields": {
         "work_mode": ["remote"],
         "work_country": "Poland",
-        "employer_countries": ["United States", "United Kingdom"],
         "seniority_levels": ["senior"],
         "required_seniority_levels": [],
         "preferred_company_types": ["product"],
@@ -25,7 +24,6 @@ def test_remote_work_country_and_employer_markets_are_stored_separately(logged_i
     assert response.status_code == 200
     active = logged_in_client.get("/api/candidate-preferences/active").json()
     assert active["work_country"] == "Poland"
-    assert active["employer_countries"] == ["United States", "United Kingdom"]
     assert active["required_seniority_levels"] == []
     assert active["required_company_types"] == []
 
@@ -39,7 +37,10 @@ def test_removed_dead_fields_are_rejected(logged_in_client):
     # Regression: these fields were removed from _JSON_FIELDS/_SCALAR_FIELDS
     # since nothing downstream ever read them. Confirms they're actually
     # gone, not just unused.
-    for field in ("salary_max", "excluded_company_types", "preferred_industries", "excluded_industries"):
+    for field in (
+        "salary_max", "excluded_company_types", "preferred_industries", "excluded_industries",
+        "employer_countries", "hybrid_cities",
+    ):
         resp = logged_in_client.post("/api/candidate-preferences", json={"fields": {field: 1}})
         assert resp.status_code == 400, f"{field} should have been rejected"
 
@@ -98,21 +99,19 @@ def test_delete_nonexistent_404s(logged_in_client):
     assert resp.status_code == 404
 
 
-def test_save_syncs_location_criteria_from_work_mode(logged_in_client):
+def test_legacy_non_remote_work_modes_do_not_add_locations(logged_in_client):
     logged_in_client.post("/api/candidate-preferences", json={"fields": {
         "work_mode": ["remote", "hybrid"],
         "remote_countries": ["Poland", "Germany"],
-        "hybrid_cities": ["Warsaw"],
     }})
     locations = logged_in_client.get("/api/criteria/active").json()["locations"]
-    assert set(locations) == {"Poland", "Germany", "Warsaw"}
+    assert set(locations) == {"Poland", "Germany"}
 
 
 def test_work_country_drives_remote_search_location_criterion(logged_in_client):
     logged_in_client.post("/api/candidate-preferences", json={"fields": {
         "work_mode": ["remote"],
         "work_country": "Poland",
-        "employer_countries": ["United States"],
     }})
     locations = logged_in_client.get("/api/criteria/active").json()["locations"]
     assert locations == ["Poland"]

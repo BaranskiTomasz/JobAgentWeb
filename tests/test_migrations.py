@@ -201,18 +201,16 @@ def test_json_columns_are_jsonb_and_reject_malformed_json():
 
 
 def test_dropped_columns_are_actually_gone():
-    # Regression: salary_max/excluded_company_types/preferred_industries/
-    # excluded_industries were collected/stored but never read by anything
-    # downstream, removed from the app-level field whitelist first, then
-    # (after confirming what real data existed) dropped from the schema
-    # itself via _DROPPED_COLUMNS, not just left as orphaned dead columns.
     conn = db_module._get_pool().getconn()
     try:
         cur = conn.cursor()
         cur.execute(
             "SELECT column_name FROM information_schema.columns "
             "WHERE table_name = 'candidate_preferences' AND column_name = ANY(%s)",
-            (["salary_max", "excluded_company_types", "preferred_industries", "excluded_industries"],),
+            ([
+                "salary_max", "excluded_company_types", "preferred_industries", "excluded_industries",
+                "employer_countries", "hybrid_cities",
+            ],),
         )
         assert cur.fetchall() == []
     finally:

@@ -65,8 +65,6 @@ def _sync_criteria_from_preferences(conn, user_id: int, fields: dict) -> None:
             locations.append(fields["work_country"])
         else:
             locations += fields.get("remote_countries") or []
-    if "hybrid" in work_mode or "onsite" in work_mode:
-        locations += fields.get("hybrid_cities") or []
     criteria_repo.delete_by_type(conn, user_id, "location")
     for v in locations:
         criteria_repo.insert(conn, user_id, "location", v)

@@ -22,71 +22,7 @@ const COUNTRY_SUGGESTIONS = [
   'Australia', 'New Zealand', 'South Africa', 'Egypt', 'Morocco',
 ];
 
-const COUNTRY_GROUPS = {
-  EU: [
-    'Austria', 'Belgium', 'Bulgaria', 'Croatia', 'Cyprus', 'Czechia', 'Denmark', 'Estonia',
-    'Finland', 'France', 'Germany', 'Greece', 'Hungary', 'Ireland', 'Italy', 'Latvia',
-    'Lithuania', 'Luxembourg', 'Malta', 'Netherlands', 'Poland', 'Portugal', 'Romania',
-    'Slovakia', 'Slovenia', 'Spain', 'Sweden',
-  ],
-  EUROZONE: [
-    'Austria', 'Belgium', 'Croatia', 'Cyprus', 'Estonia', 'Finland', 'France', 'Germany',
-    'Greece', 'Ireland', 'Italy', 'Latvia', 'Lithuania', 'Luxembourg', 'Malta', 'Netherlands',
-    'Portugal', 'Slovakia', 'Slovenia', 'Spain',
-  ],
-  NATO: [
-    'Albania', 'Belgium', 'Bulgaria', 'Canada', 'Croatia', 'Czechia', 'Denmark', 'Estonia',
-    'Finland', 'France', 'Germany', 'Greece', 'Hungary', 'Iceland', 'Italy', 'Latvia',
-    'Lithuania', 'Luxembourg', 'Montenegro', 'Netherlands', 'North Macedonia', 'Norway',
-    'Poland', 'Portugal', 'Romania', 'Slovakia', 'Slovenia', 'Spain', 'Sweden', 'Turkey',
-    'United Kingdom', 'United States',
-  ],
-};
-
-// Adds every country in the named group that isn't already a chip. Does not
-// remove or track anything, so the button always means "make sure this whole
-// group is present right now," even if some of it was removed earlier.
-function addCountryGroup(groupName) {
-  const existing = new Set(getChipValues('country-chips').map(v => v.toLowerCase()));
-  (COUNTRY_GROUPS[groupName] || []).forEach(country => {
-    if (!existing.has(country.toLowerCase())) addChipValue('country-chips', country);
-  });
-}
-
-const CITY_SUGGESTIONS = [
-  'Warsaw', 'Kraków', 'Wrocław', 'Gdańsk', 'Poznań', 'Łódź', 'Katowice', 'Szczecin',
-  'Berlin', 'Munich', 'Hamburg', 'Frankfurt', 'Cologne', 'Stuttgart',
-  'London', 'Manchester', 'Edinburgh', 'Bristol',
-  'Amsterdam', 'Rotterdam', 'The Hague', 'Utrecht',
-  'Paris', 'Lyon', 'Marseille', 'Toulouse',
-  'Madrid', 'Barcelona', 'Valencia', 'Lisbon', 'Porto',
-  'Milan', 'Rome', 'Turin',
-  'Dublin', 'Cork',
-  'Brussels', 'Antwerp',
-  'Zurich', 'Geneva', 'Basel',
-  'Vienna', 'Graz',
-  'Stockholm', 'Gothenburg', 'Copenhagen', 'Oslo', 'Helsinki',
-  'Prague', 'Brno', 'Bratislava', 'Budapest', 'Bucharest', 'Sofia', 'Zagreb', 'Ljubljana',
-  'Athens', 'Vilnius', 'Riga', 'Tallinn', 'Kyiv',
-  'New York', 'San Francisco', 'Austin', 'Boston', 'Seattle', 'Chicago', 'Toronto', 'Vancouver',
-  'Dubai', 'Tel Aviv', 'Istanbul', 'Bangalore', 'Singapore', 'Tokyo', 'Seoul',
-  'Sydney', 'Melbourne',
-];
-
 function toggle(el) { el.classList.toggle('on'); }
-
-function toggleWorkMode(el) {
-  el.classList.toggle('on');
-  updateWorkModePanels();
-}
-
-function updateWorkModePanels() {
-  const remote = document.querySelector('#workmode-group [data-value="remote"]').classList.contains('on');
-  const hybridOrOnsite = document.querySelector('#workmode-group [data-value="hybrid"]').classList.contains('on')
-    || document.querySelector('#workmode-group [data-value="onsite"]').classList.contains('on');
-  document.getElementById('remote-panel').style.display = remote ? '' : 'none';
-  document.getElementById('hybrid-panel').style.display = hybridOrOnsite ? '' : 'none';
-}
 
 function makeRemovableChip(value) {
   const chip = document.createElement('span');
@@ -190,10 +126,8 @@ async function savePreferences() {
   const companyTypes = getToggledValues('company-group');
 
   const fields = {
-    work_mode: getToggledValues('workmode-group'),
+    work_mode: ['remote'],
     work_country: document.getElementById('work-country').value.trim(),
-    employer_countries: getChipValues('country-chips'),
-    hybrid_cities: getChipValues('city-chips'),
     salary_min: salaryMin ? parseInt(salaryMin, 10) : null,
     salary_currency: document.getElementById('salary-currency').value,
     show_jobs_without_salary: document.getElementById('show-no-salary').checked ? 1 : 0,
@@ -242,13 +176,7 @@ async function fetchOrNull(url) {
 
 async function init() {
   populateDatalist('country-suggestions', COUNTRY_SUGGESTIONS);
-  populateDatalist('city-suggestions', CITY_SUGGESTIONS);
   populateDatalist('language-suggestions', LANGUAGE_SUGGESTIONS);
-
-  Object.entries(COUNTRY_GROUPS).forEach(([name, countries]) => {
-    const tip = document.getElementById(`tip-${name}`);
-    if (tip) tip.textContent = countries.join(', ');
-  });
 
   const [cv, prefs] = await Promise.all([
     fetchOrNull('/api/cv-profiles/active'),
@@ -260,12 +188,8 @@ async function init() {
     document.getElementById('cv-filename').textContent = cv.filename;
   }
 
-  setToggled('workmode-group', prefs ? prefs.work_mode : ['remote']);
   const legacyWorkCountry = prefs && (prefs.remote_countries || []).length === 1 ? prefs.remote_countries[0] : '';
   document.getElementById('work-country').value = prefs ? (prefs.work_country || legacyWorkCountry) : '';
-  (prefs ? (prefs.employer_countries || []) : []).forEach(c => addChipValue('country-chips', c));
-  (prefs ? prefs.hybrid_cities : []).forEach(c => addChipValue('city-chips', c));
-  updateWorkModePanels();
 
   if (prefs) {
     if (prefs.salary_min != null) document.getElementById('salary-min').value = prefs.salary_min;

@@ -83,29 +83,6 @@ textarea { resize: vertical; min-height: 84px; }
 .chip.removable .x { opacity: 0.6; }
 .chip.removable:hover .x { opacity: 1; }
 
-.group-add-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.btn-group-add {
-  position: relative;
-  border: 1px dashed var(--line); background: var(--paper); color: var(--ink-soft);
-  border-radius: 999px; padding: 6px 13px; font-size: 0.8rem; cursor: pointer; white-space: nowrap;
-}
-.btn-group-add:hover { border-color: var(--signal); border-style: solid; color: var(--signal); }
-
-.info { display: inline-flex; }
-.info .tip {
-  position: absolute; z-index: 20; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
-  width: max-content; max-width: 260px;
-  background: var(--ink); color: var(--paper); font-size: 0.76rem; line-height: 1.5;
-  text-align: left; white-space: normal; font-weight: 400;
-  padding: 10px 12px; border-radius: 10px; box-shadow: var(--shadow);
-  display: none;
-}
-.info .tip::after {
-  content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
-  border: 6px solid transparent; border-top-color: var(--ink);
-}
-.info:hover .tip, .info:focus-visible .tip { display: block; }
-
 .lang-row { display: grid; grid-template-columns: 1.4fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center; }
 
 .quiz__footer {

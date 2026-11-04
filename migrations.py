@@ -276,9 +276,7 @@ _SCHEMA = """
         cv_profile_id            INTEGER REFERENCES cv_profiles(id),
         work_mode                TEXT,
         work_country             TEXT,
-        employer_countries       TEXT,
         remote_countries         TEXT,
-        hybrid_cities            TEXT,
         salary_min               INTEGER,
         salary_currency          TEXT,
         show_jobs_without_salary INTEGER DEFAULT 1,
@@ -348,7 +346,6 @@ _NEW_COLUMNS = [
     ("user_job_states", "score_fingerprint", "TEXT"),
     ("user_job_states", "ranking_fingerprint", "TEXT"),
     ("candidate_preferences", "work_country", "TEXT"),
-    ("candidate_preferences", "employer_countries", "TEXT"),
     ("candidate_preferences", "required_seniority_levels", "TEXT"),
     ("candidate_preferences", "required_company_types", "TEXT"),
     ("preference_profiles", "content_format", "TEXT DEFAULT 'text'"),
@@ -399,6 +396,8 @@ _DROPPED_COLUMNS = [
     ("candidate_preferences", "excluded_company_types"),
     ("candidate_preferences", "preferred_industries"),
     ("candidate_preferences", "excluded_industries"),
+    ("candidate_preferences", "employer_countries"),
+    ("candidate_preferences", "hybrid_cities"),
 ]
 
 # Mirrors the value sets already enforced app-side (Pydantic Literal in
