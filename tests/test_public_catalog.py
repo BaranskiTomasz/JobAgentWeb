@@ -1,3 +1,4 @@
+import catalog_repo
 from catalog import classify_catalog_job
 
 
@@ -478,6 +479,40 @@ def test_personalize_attaches_shared_posting_to_second_user(logged_in_client, ot
     jobs = other_logged_in_client.get("/api/jobs").json()
     assert [job["id"] for job in jobs] == [job_id]
     assert jobs[0]["score"] is None
+
+
+def test_attach_catalog_for_all_users_matches_remote_country_and_is_idempotent(
+    logged_in_client, other_logged_in_client, other_user, db_conn,
+):
+    matching_id = _create_catalog_job(
+        logged_in_client, url="https://example.com/catalog/automatic-pl",
+    )
+    nonmatching_id = _create_catalog_job(
+        logged_in_client,
+        url="https://example.com/catalog/automatic-bg",
+        location="Bulgaria (Remote)",
+        source_structured_data={"remote": True, "remote_regions": ["Bulgaria"]},
+    )
+    response = other_logged_in_client.post("/api/candidate-preferences", json={
+        "fields": {"work_mode": ["remote"], "remote_countries": ["Poland"]},
+    })
+    assert response.status_code == 200
+
+    first = catalog_repo.attach_catalog_for_all_users(db_conn)
+    second = catalog_repo.attach_catalog_for_all_users(db_conn)
+    db_conn.commit()
+
+    assert first[other_user["id"]] == 1
+    assert second[other_user["id"]] == 0
+    cur = db_conn.cursor()
+    cur.execute(
+        "SELECT job_id FROM user_job_states WHERE user_id = %s ORDER BY job_id",
+        (other_user["id"],),
+    )
+    assert [row[0] for row in cur.fetchall()] == [matching_id]
+    assert nonmatching_id not in {
+        job["id"] for job in other_logged_in_client.get("/api/jobs").json()
+    }
 
 
 def test_personalize_requires_account(client):

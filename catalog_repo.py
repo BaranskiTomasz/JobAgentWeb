@@ -1,3 +1,6 @@
+import json
+
+from catalog import COUNTRY_NAMES
 from db import dict_cursor
 
 
@@ -246,3 +249,31 @@ def attach_to_user(conn, user_id: int, technology: str, country: str) -> int:
         (user_id, technology, technology, country),
     )
     return cur.rowcount
+
+
+def attach_catalog_for_all_users(conn) -> dict[int, int]:
+    cur = dict_cursor(conn)
+    cur.execute(
+        """SELECT DISTINCT ON (user_id) user_id, remote_countries
+           FROM candidate_preferences
+           WHERE is_active = 1
+           ORDER BY user_id, created_at DESC, id DESC"""
+    )
+    active_preferences = cur.fetchall()
+    country_codes = {
+        name.casefold(): code
+        for code, names in COUNTRY_NAMES.items()
+        for name in (code, *names)
+    }
+    attached = {}
+    for preference in active_preferences:
+        user_id = preference["user_id"]
+        attached[user_id] = 0
+        remote_countries = json.loads(preference["remote_countries"] or "[]")
+        for country in remote_countries:
+            country_code = country_codes.get(str(country).strip().casefold())
+            if country_code is None:
+                continue
+            for category in CATEGORIES:
+                attached[user_id] += attach_to_user(conn, user_id, category, country_code)
+    return attached

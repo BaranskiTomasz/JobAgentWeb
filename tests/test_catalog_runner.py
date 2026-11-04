@@ -47,6 +47,7 @@ def test_catalog_runner_deduplicates_records_stats_and_extracts(monkeypatch):
     monkeypatch.setattr(catalog_runner.jobs_repo, "insert", insert)
     monkeypatch.setattr(catalog_runner.jobs_repo, "get_shared_missing_facts", lambda *_args: [{"id": "new-job", "description": "x"}])
     monkeypatch.setattr(catalog_runner.search_stats_repo, "record", lambda *_args, **kwargs: stats.append(kwargs))
+    monkeypatch.setattr(catalog_runner.catalog_repo, "attach_catalog_for_all_users", lambda _conn: {})
     result = catalog_runner.run_catalog_collection(
         SimpleNamespace(commit=lambda: None), source_ids=["example"], slot=0,
         extractor=lambda _conn, jobs, **_kwargs: extracted.append(jobs) or len(jobs),
@@ -72,6 +73,7 @@ def test_catalog_runner_extracts_backlog_from_a_prior_run_not_just_this_ones_fin
         lambda *_args: [{"id": "stuck-from-earlier-run", "description": "x"}],
     )
     monkeypatch.setattr(catalog_runner.search_stats_repo, "record", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(catalog_runner.catalog_repo, "attach_catalog_for_all_users", lambda _conn: {})
     result = catalog_runner.run_catalog_collection(
         SimpleNamespace(commit=lambda: None), source_ids=["example"], slot=0,
         extractor=lambda _conn, jobs, **_kwargs: extracted.append(jobs) or len(jobs),
@@ -81,6 +83,29 @@ def test_catalog_runner_extracts_backlog_from_a_prior_run_not_just_this_ones_fin
     assert extracted == [[{"id": "stuck-from-earlier-run", "description": "x"}]]
 
 
+def test_catalog_runner_attaches_after_extraction(monkeypatch):
+    stages = []
+    monkeypatch.setattr(catalog_runner, "available", lambda: ["example"])
+    monkeypatch.setattr(catalog_runner, "make", lambda *_args, **_kwargs: _Source([]))
+    monkeypatch.setattr(catalog_runner.jobs_repo, "get_all_shared_urls", lambda _conn: set())
+    monkeypatch.setattr(
+        catalog_runner.jobs_repo, "get_shared_missing_facts",
+        lambda *_args: [{"id": "pending", "description": "x"}],
+    )
+    monkeypatch.setattr(catalog_runner.search_stats_repo, "record", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        catalog_runner.catalog_repo, "attach_catalog_for_all_users",
+        lambda _conn: stages.append("attach") or {1: 2},
+    )
+
+    catalog_runner.run_catalog_collection(
+        SimpleNamespace(commit=lambda: stages.append("commit")), source_ids=["example"], slot=0,
+        extractor=lambda *_args, **_kwargs: stages.append("extract") or 1,
+    )
+
+    assert stages == ["extract", "attach", "commit"]
+
+
 def test_catalog_runner_continues_when_source_raises(monkeypatch):
     stats = []
     monkeypatch.setattr(catalog_runner.jobs_repo, "get_all_shared_urls", lambda _conn: set())
@@ -88,6 +113,7 @@ def test_catalog_runner_continues_when_source_raises(monkeypatch):
     monkeypatch.setattr(catalog_runner.jobs_repo, "insert", lambda *_args, **_kwargs: {"job_id": "ok", "posting_created": True})
     monkeypatch.setattr(catalog_runner.jobs_repo, "get_shared_missing_facts", lambda *_args: [])
     monkeypatch.setattr(catalog_runner.search_stats_repo, "record", lambda *_args, **kwargs: stats.append(kwargs))
+    monkeypatch.setattr(catalog_runner.catalog_repo, "attach_catalog_for_all_users", lambda _conn: {})
     result = catalog_runner.run_catalog_collection(SimpleNamespace(commit=lambda: None), source_ids=["bad", "ok"], slot=0)
     assert result["jobs_new"] == 1
     assert any(item.get("source_status") == "error" for item in stats)

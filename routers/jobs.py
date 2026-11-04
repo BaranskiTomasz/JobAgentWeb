@@ -79,6 +79,11 @@ def get_new(user: dict = Depends(get_current_user), conn=Depends(get_db)):
     return jobs_repo.get_new(conn, user["id"])
 
 
+@router.get("/new-needing-extraction", response_model=list[JobOut])
+def get_new_needing_extraction(user: dict = Depends(get_current_user), conn=Depends(get_db)):
+    return jobs_repo.get_new_needing_extraction(conn, user["id"])
+
+
 @router.get("/unscored", response_model=list[JobOut])
 def get_unscored(user: dict = Depends(get_current_user), conn=Depends(get_db)):
     return jobs_repo.get_unscored(conn, user["id"])

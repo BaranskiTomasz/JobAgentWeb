@@ -318,6 +318,27 @@ def test_get_new_unscored_new_with_descriptions(logged_in_client, db_conn):
     assert with_desc_ids == {with_desc}
 
 
+def test_get_new_needing_extraction_includes_missing_and_catalog_gate_only(
+    logged_in_client, db_conn,
+):
+    missing = _create(logged_in_client, url="https://example.com/jobs/extraction-missing")["job_id"]
+    catalog_gate = _create(logged_in_client, url="https://example.com/jobs/extraction-gate")["job_id"]
+    full = _create(logged_in_client, url="https://example.com/jobs/extraction-full")["job_id"]
+    _store_extraction(db_conn, catalog_gate, "catalog_gate")
+    _store_extraction(db_conn, full)
+
+    response = logged_in_client.get("/api/jobs/new-needing-extraction")
+
+    assert response.status_code == 200
+    assert {job["id"] for job in response.json()} == {missing, catalog_gate}
+
+
+def test_get_new_needing_extraction_requires_authentication(client):
+    response = client.get("/api/jobs/new-needing-extraction")
+
+    assert response.status_code == 401
+
+
 def test_for_ranking(logged_in_client, db_conn):
     job_id = _create(logged_in_client)["job_id"]
     _store_extraction(db_conn, job_id)

@@ -720,6 +720,23 @@ def get_new(conn, user_id: int) -> list[dict]:
     return [_row_to_job(r) for r in cur.fetchall()]
 
 
+def get_new_needing_extraction(conn, user_id: int) -> list[dict]:
+    cur = dict_cursor(conn)
+    cur.execute(
+        f"""SELECT {_JOB_COLUMNS} {_JOB_FROM}
+            WHERE ujs.user_id = %s AND ujs.status = 'new'
+              AND jp.description IS NOT NULL AND jp.description != ''
+              AND NOT EXISTS (
+                  SELECT 1 FROM job_fact_extractions jfe
+                  WHERE jfe.job_id = jp.id
+                    AND COALESCE(jfe.facts->>'_extraction_tier', 'full') != 'catalog_gate'
+              )
+            ORDER BY ujs.created_at DESC""",
+        (user_id,),
+    )
+    return [_row_to_job(r) for r in cur.fetchall()]
+
+
 def get_unscored(conn, user_id: int) -> list[dict]:
     cur = dict_cursor(conn)
     cur.execute(

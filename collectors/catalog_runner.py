@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import date
 
+import catalog_repo
 import jobs_repo
 import search_stats_repo
 from collectors.query_matcher import job_matches_query
@@ -126,6 +127,8 @@ def run_catalog_collection(conn, *, days_back: int = 7, max_jobs: int | None = N
         extracted = extractor(conn, pending_facts, catalog=True) if pending_facts else 0
     except Exception:
         logger.exception("catalog extraction stage failed")
+    attached = catalog_repo.attach_catalog_for_all_users(conn)
+    logger.info("catalog attachment complete: users=%s attached=%s", len(attached), sum(attached.values()))
     conn.commit()
     result = {"jobs_found": found, "jobs_new": new, "job_ids": job_ids, "extracted": extracted}
     logger.info("catalog collection finished: found=%s new=%s extracted=%s", found, new, extracted)
