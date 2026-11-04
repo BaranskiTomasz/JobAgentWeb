@@ -938,6 +938,14 @@ function _matchesBadgeFilters(j) {
   const active = [..._badgeFilters];
   const scoreFilters = active.filter(f => f.startsWith('score='));
   const otherFilters = active.filter(f => !f.startsWith('score='));
+  const workFilters = otherFilters.filter(f => f.startsWith('work='));
+  const seniorityFilters = otherFilters.filter(f => f.startsWith('seniority='));
+  const companyTypeFilters = otherFilters.filter(f => f.startsWith('ctype='));
+  const productVsOutsourcingFilters = otherFilters.filter(f => f.startsWith('pvo='));
+  const stackFilters = otherFilters.filter(f => f.startsWith('stack='));
+  const sourceFilters = otherFilters.filter(f => f.startsWith('source='));
+  const firmFilters = otherFilters.filter(f => f.startsWith('firm='));
+  const locationFilters = otherFilters.filter(f => f.startsWith('loc='));
 
   if (scoreFilters.length && !scoreFilters.includes(_scoreKey(j.score))) return false;
   if (!otherFilters.length) return true;
@@ -947,16 +955,14 @@ function _matchesBadgeFilters(j) {
   const work = _workType(s);
   const locValue = _isRemoteLocationText(j.location) ? (_countryOf(j.location) || j.location || '') : (j.location || '');
 
-  for (const f of otherFilters) {
-    if (f.startsWith('work=')      && work !== f.slice(5)) return false;
-    if (f.startsWith('seniority=') && (!s || s.seniority !== f.slice(10))) return false;
-    if (f.startsWith('ctype=')     && (!s || s.company_type !== f.slice(7))) return false;
-    if (f.startsWith('pvo=')       && (!s || s.product_vs_outsourcing !== f.slice(4))) return false;
-    if (f.startsWith('stack=')     && !stackLower.includes(f.slice(6))) return false;
-    if (f.startsWith('source=')    && j.source !== f.slice(7)) return false;
-    if (f.startsWith('firm=')      && (j.company || '') !== f.slice(5)) return false;
-    if (f.startsWith('loc=')       && locValue !== f.slice(4)) return false;
-  }
+  if (workFilters.length && !workFilters.includes(`work=${work}`)) return false;
+  if (seniorityFilters.length && (!s || !seniorityFilters.includes(`seniority=${s.seniority}`))) return false;
+  if (companyTypeFilters.length && (!s || !companyTypeFilters.includes(`ctype=${s.company_type}`))) return false;
+  if (productVsOutsourcingFilters.length && (!s || !productVsOutsourcingFilters.includes(`pvo=${s.product_vs_outsourcing}`))) return false;
+  if (stackFilters.some(f => !stackLower.includes(f.slice(6)))) return false;
+  if (sourceFilters.length && !sourceFilters.includes(`source=${j.source}`)) return false;
+  if (firmFilters.length && !firmFilters.includes(`firm=${j.company || ''}`)) return false;
+  if (locationFilters.length && !locationFilters.includes(`loc=${locValue}`)) return false;
   return true;
 }
 
