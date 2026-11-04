@@ -254,7 +254,7 @@ def attach_to_user(conn, user_id: int, technology: str, country: str) -> int:
 def attach_catalog_for_all_users(conn) -> dict[int, int]:
     cur = dict_cursor(conn)
     cur.execute(
-        """SELECT DISTINCT ON (user_id) user_id, remote_countries
+        """SELECT DISTINCT ON (user_id) user_id, work_country, remote_countries
            FROM candidate_preferences
            WHERE is_active = 1
            ORDER BY user_id, created_at DESC, id DESC"""
@@ -269,8 +269,11 @@ def attach_catalog_for_all_users(conn) -> dict[int, int]:
     for preference in active_preferences:
         user_id = preference["user_id"]
         attached[user_id] = 0
-        remote_countries = json.loads(preference["remote_countries"] or "[]")
-        for country in remote_countries:
+        if preference["work_country"]:
+            countries = [preference["work_country"]]
+        else:
+            countries = json.loads(preference["remote_countries"] or "[]")
+        for country in countries:
             country_code = country_codes.get(str(country).strip().casefold())
             if country_code is None:
                 continue

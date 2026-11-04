@@ -481,7 +481,7 @@ def test_personalize_attaches_shared_posting_to_second_user(logged_in_client, ot
     assert jobs[0]["score"] is None
 
 
-def test_attach_catalog_for_all_users_matches_remote_country_and_is_idempotent(
+def test_attach_catalog_for_all_users_matches_work_country_and_is_idempotent(
     logged_in_client, other_logged_in_client, other_user, db_conn,
 ):
     matching_id = _create_catalog_job(
@@ -494,7 +494,7 @@ def test_attach_catalog_for_all_users_matches_remote_country_and_is_idempotent(
         source_structured_data={"remote": True, "remote_regions": ["Bulgaria"]},
     )
     response = other_logged_in_client.post("/api/candidate-preferences", json={
-        "fields": {"work_mode": ["remote"], "remote_countries": ["Poland"]},
+        "fields": {"work_mode": ["remote"], "work_country": "Poland", "remote_countries": []},
     })
     assert response.status_code == 200
 
@@ -513,6 +513,27 @@ def test_attach_catalog_for_all_users_matches_remote_country_and_is_idempotent(
     assert nonmatching_id not in {
         job["id"] for job in other_logged_in_client.get("/api/jobs").json()
     }
+
+
+def test_attach_catalog_for_all_users_falls_back_to_legacy_remote_countries(
+    logged_in_client, other_logged_in_client, other_user, db_conn,
+):
+    matching_id = _create_catalog_job(logged_in_client)
+    response = other_logged_in_client.post("/api/candidate-preferences", json={
+        "fields": {"work_mode": ["remote"], "remote_countries": ["Poland"]},
+    })
+    assert response.status_code == 200
+
+    attached = catalog_repo.attach_catalog_for_all_users(db_conn)
+    db_conn.commit()
+
+    assert attached[other_user["id"]] == 1
+    cur = db_conn.cursor()
+    cur.execute(
+        "SELECT job_id FROM user_job_states WHERE user_id = %s",
+        (other_user["id"],),
+    )
+    assert [row[0] for row in cur.fetchall()] == [matching_id]
 
 
 def test_personalize_requires_account(client):
