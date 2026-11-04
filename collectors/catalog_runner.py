@@ -100,6 +100,7 @@ def run_catalog_collection(conn, *, days_back: int = 7, max_jobs: int | None = N
                                     source_returned=len(raw_jobs), global_matched=len(raw_jobs),
                                     duplicate_found=duplicates, source_status="ok")
                         except Exception as error:
+                            conn.rollback()
                             logger.exception("catalog source %s failed for %s/%s", source_id, query, location)
                             _record(conn, source_id, query, location, 0, 0, source_status="error", source_error=str(error)[:1000])
             for job_id, url in pending:
@@ -110,7 +111,9 @@ def run_catalog_collection(conn, *, days_back: int = 7, max_jobs: int | None = N
                 except Exception:
                     logger.exception("catalog description fetch failed: %s", url)
             logger.info("catalog source complete: source=%s new=%s", source_id, source_new)
+            conn.commit()
         except Exception as error:
+            conn.rollback()
             logger.exception("catalog source setup failed: %s", source_id)
             try:
                 _record(conn, source_id, "__source__", "", 0, 0, source_status="error", source_error=str(error)[:1000])

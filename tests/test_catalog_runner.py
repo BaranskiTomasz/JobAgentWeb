@@ -103,7 +103,7 @@ def test_catalog_runner_attaches_after_extraction(monkeypatch):
         extractor=lambda *_args, **_kwargs: stages.append("extract") or 1,
     )
 
-    assert stages == ["extract", "attach", "commit"]
+    assert stages == ["commit", "extract", "attach", "commit"]
 
 
 def test_catalog_runner_continues_when_source_raises(monkeypatch):
@@ -114,9 +114,73 @@ def test_catalog_runner_continues_when_source_raises(monkeypatch):
     monkeypatch.setattr(catalog_runner.jobs_repo, "get_shared_missing_facts", lambda *_args: [])
     monkeypatch.setattr(catalog_runner.search_stats_repo, "record", lambda *_args, **kwargs: stats.append(kwargs))
     monkeypatch.setattr(catalog_runner.catalog_repo, "attach_catalog_for_all_users", lambda _conn: {})
-    result = catalog_runner.run_catalog_collection(SimpleNamespace(commit=lambda: None), source_ids=["bad", "ok"], slot=0)
+    result = catalog_runner.run_catalog_collection(SimpleNamespace(commit=lambda: None, rollback=lambda: None), source_ids=["bad", "ok"], slot=0)
     assert result["jobs_new"] == 1
     assert any(item.get("source_status") == "error" for item in stats)
+
+
+def test_catalog_runner_commits_successful_source_before_later_source_rollback(monkeypatch):
+    stats = []
+
+    class FakeDeadlockDetected(Exception):
+        pass
+
+    class FakeConnection:
+        def __init__(self):
+            self.actions = []
+            self.staged = []
+            self.committed = []
+
+        def commit(self):
+            self.actions.append("commit")
+            self.committed.extend(self.staged)
+            self.staged.clear()
+
+        def rollback(self):
+            self.actions.append("rollback")
+            self.staged.clear()
+
+    class OneShotSource(_Source):
+        def search(self, query, *_args, **_kwargs):
+            if self.jobs:
+                self.jobs[0].title = query
+            jobs, self.jobs = self.jobs, []
+            return jobs
+
+    monkeypatch.setattr(catalog_runner.jobs_repo, "get_all_shared_urls", lambda _conn: set())
+    monkeypatch.setattr(
+        catalog_runner, "make",
+        lambda source, **_kwargs: OneShotSource([_job(f"https://{source}.test/job")]),
+    )
+
+    def insert(conn, _user_id, job, **_kwargs):
+        conn.staged.append(job["url"])
+        if "bad" in job.get("url", ""):
+            raise FakeDeadlockDetected("deadlock detected")
+        return {"job_id": "ok-job", "posting_created": True}
+
+    monkeypatch.setattr(catalog_runner.jobs_repo, "insert", insert)
+    monkeypatch.setattr(catalog_runner.jobs_repo, "get_shared_missing_facts", lambda *_args: [])
+    monkeypatch.setattr(
+        catalog_runner.search_stats_repo, "record",
+        lambda conn, _uid, _sid, source, query, loc, cards, new, **kwargs: (
+            conn.staged.append(f"stats:{source}:{kwargs.get('source_status')}")
+            or stats.append(
+                {"source": source, "query": query, "location": loc, "cards": cards, "new": new, **kwargs}
+            )
+        ),
+    )
+    monkeypatch.setattr(catalog_runner.catalog_repo, "attach_catalog_for_all_users", lambda _conn: {})
+
+    conn = FakeConnection()
+    result = catalog_runner.run_catalog_collection(conn, source_ids=["first_ok", "bad"], slot=0)
+
+    assert conn.actions == ["commit", "rollback", "commit", "commit"]
+    assert result["jobs_new"] == 1
+    assert "https://first_ok.test/job" in conn.committed
+    assert "https://bad.test/job" not in conn.committed
+    assert any(item.get("source") == "bad" and item.get("source_status") == "error" and "deadlock detected" in str(item.get("source_error")) for item in stats)
+    assert any(item.get("source") == "first_ok" and item.get("source_status") == "ok" and item.get("inserted_found") == 1 for item in stats)
 
 
 def test_catalog_gate_uses_anthropic_tool_schema(monkeypatch):
