@@ -3,6 +3,11 @@
 The application starts an APScheduler background scheduler during FastAPI lifespan
 startup. It runs `collectors.catalog_runner.run_catalog_collection` every 24 hours
 from process startup, rotating two catalog queries by `date.today().toordinal()`.
+The trusted JobAgent automation client can also request an immediate run with
+`POST /api/catalog/collection/run-now` and check its progress with
+`GET /api/catalog/collection/status`. An immediate run shifts the interval job's
+next automatic occurrence to 24 hours after that run; a request received while
+collection is already running leaves the existing schedule unchanged.
 
 Set `ANTHROPIC_API_KEY` in the server environment. `CLAUDE_CATALOG_EXTRACT_MODEL`
 optionally overrides the default catalog extraction model. Run one collection

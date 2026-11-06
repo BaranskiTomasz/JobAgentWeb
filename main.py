@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
+from threading import Event
 
+import psycopg2
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,20 +18,33 @@ import users_repo
 from config import SECRET_KEY, SESSION_HTTPS_ONLY
 from db import _get_pool, get_db
 from routers import (
-    admin, auth, candidate_preferences, criteria, cv_profiles, dismissed_items,
-    embeddings, evaluation, excluded_queries, jobs, preference_profiles,
-    public_jobs, search_stats, sessions, sources, usage,
+    admin, auth, candidate_preferences, catalog_admin, criteria, cv_profiles,
+    dismissed_items, embeddings, evaluation, excluded_queries, jobs,
+    preference_profiles, public_jobs, search_stats, sessions, sources, usage,
 )
 
 _BASE_DIR = Path(__file__).parent
 logger = logging.getLogger(__name__)
 
 
-def _run_scheduled_catalog_collection() -> None:
+def _run_catalog_collection_tracked(
+    conn: psycopg2.extensions.connection,
+) -> None:
     from collectors.catalog_runner import run_catalog_collection
-    conn = _get_pool().getconn()
+
+    with catalog_admin.catalog_collection_lock:
+        app.state.catalog_collection_running.set()
     try:
         run_catalog_collection(conn)
+    finally:
+        with catalog_admin.catalog_collection_lock:
+            app.state.catalog_collection_running.clear()
+
+
+def _run_scheduled_catalog_collection() -> None:
+    conn = _get_pool().getconn()
+    try:
+        _run_catalog_collection_tracked(conn)
     except Exception:
         conn.rollback()
         logger.exception("scheduled catalog collection failed")
@@ -46,6 +61,8 @@ async def lifespan(app: FastAPI):
         _get_pool().putconn(conn)
     from apscheduler.schedulers.background import BackgroundScheduler
     scheduler = BackgroundScheduler(timezone="UTC")
+    app.state.catalog_collection_running = Event()
+    app.state.scheduler = scheduler
     scheduler.add_job(
         _run_scheduled_catalog_collection, "interval", days=1,
         id="catalog_collection", replace_existing=True, max_instances=1, coalesce=True,
@@ -64,6 +81,7 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=SESSION_
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(catalog_admin.router)
 app.include_router(jobs.router)
 app.include_router(dismissed_items.router)
 app.include_router(cv_profiles.router)
