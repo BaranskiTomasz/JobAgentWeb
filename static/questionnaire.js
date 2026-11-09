@@ -113,6 +113,7 @@ function getLanguages() {
 }
 
 let _activeCvProfileId = null;
+let _activePrefs = null;
 
 async function savePreferences() {
   const btn = document.getElementById('save-btn');
@@ -127,6 +128,13 @@ async function savePreferences() {
 
   const fields = {
     work_mode: ['remote'],
+    // This form has no control for remote_countries (a candidate's full
+    // acceptable-remote-markets list, used by evaluator/dealbreakers.py's geo
+    // check) - only the legacy single work_country field. Carrying the
+    // existing value forward avoids silently wiping it on every save, since
+    // the backend's insert() writes a brand-new row with any omitted field
+    // defaulting to null.
+    remote_countries: _activePrefs ? (_activePrefs.remote_countries || []) : [],
     work_country: document.getElementById('work-country').value.trim(),
     salary_min: salaryMin ? parseInt(salaryMin, 10) : null,
     salary_currency: document.getElementById('salary-currency').value,
@@ -187,6 +195,8 @@ async function init() {
     _activeCvProfileId = cv.id;
     document.getElementById('cv-filename').textContent = cv.filename;
   }
+
+  _activePrefs = prefs;
 
   const legacyWorkCountry = prefs && (prefs.remote_countries || []).length === 1 ? prefs.remote_countries[0] : '';
   document.getElementById('work-country').value = prefs ? (prefs.work_country || legacyWorkCountry) : '';
