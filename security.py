@@ -1,3 +1,4 @@
+import hashlib
 import os
 
 import bcrypt
@@ -13,6 +14,11 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode(), password_hash.encode())
+
+
+def hash_automation_key(raw_key: str) -> str:
+    # Random 256-bit keys need indexed lookup, not a password KDF.
+    return hashlib.sha256(raw_key.encode()).hexdigest()
 
 
 # Checked against on a login attempt for a username that doesn't exist, so the

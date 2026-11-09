@@ -332,7 +332,7 @@ class TestJobAgentApiKeyAuth:
         )
         assert response.status_code == 200
 
-    def test_nonexistent_configured_user_id_falls_back_to_session_check(self, client, monkeypatch):
+    def test_nonexistent_configured_user_id_is_rejected(self, client, monkeypatch):
         monkeypatch.setattr("deps.JOBAGENT_API_KEY", "test-shared-secret")
         monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", "999999")
         resp = client.get("/api/jobs/stats", headers={"X-JobAgent-Api-Key": "test-shared-secret"})
@@ -357,8 +357,129 @@ class TestJobAgentApiKeyAuth:
         import users_repo
         users_repo.bump_session_epoch(db_conn, user["id"])
         db_conn.commit()
-
         monkeypatch.setattr("deps.JOBAGENT_API_KEY", "test-shared-secret")
         monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", str(user["id"]))
-        resp = client.get("/api/jobs/stats", headers={"X-JobAgent-Api-Key": "test-shared-secret"})
+        resp = client.get(
+            "/api/jobs/stats",
+            headers={"X-JobAgent-Api-Key": "test-shared-secret"},
+        )
         assert resp.status_code == 200
+
+
+class TestDatabaseAutomationKeyAuth:
+    def test_key_authenticates_as_its_owner(self, client, user, db_conn):
+        import automation_keys_repo
+
+        _, raw_key = automation_keys_repo.create(db_conn, user["id"], "test")
+        db_conn.commit()
+        response = client.get(
+            "/api/jobs/stats",
+            headers={"X-JobAgent-Api-Key": raw_key},
+        )
+        assert response.status_code == 200
+
+    def test_key_cannot_reach_admin(self, client, admin_user, db_conn):
+        import automation_keys_repo
+
+        _, raw_key = automation_keys_repo.create(db_conn, admin_user["id"], "test")
+        db_conn.commit()
+        response = client.get("/admin", headers={"X-JobAgent-Api-Key": raw_key})
+        assert response.status_code == 403
+
+    def test_key_owner_is_not_taken_from_session(
+        self, client, user, other_user, db_conn,
+    ):
+        import automation_keys_repo
+
+        client.post(
+            "/login",
+            data={"username": other_user["username"], "password": other_user["password"]},
+        )
+        _, raw_key = automation_keys_repo.create(db_conn, user["id"], "test")
+        db_conn.commit()
+        created = client.post(
+            "/api/jobs",
+            headers={"X-JobAgent-Api-Key": raw_key},
+            json={"title": "Owner job", "url": "https://example.com/key-owner"},
+        )
+        assert created.status_code == 200
+        urls = client.get(
+            "/api/jobs/urls",
+            headers={"X-JobAgent-Api-Key": raw_key},
+        ).json()["urls"]
+        assert "https://example.com/key-owner" in urls
+
+
+class TestAutomationKeyRejectionIsTerminal:
+    def test_unknown_key_does_not_fall_back_to_logged_in_session(
+        self, logged_in_client,
+    ):
+        response = logged_in_client.get(
+            "/api/jobs/stats",
+            headers={"X-JobAgent-Api-Key": "unknown"},
+        )
+        assert response.status_code == 401
+        assert response.json() == {"detail": "Invalid automation key"}
+
+    def test_revoked_key_does_not_fall_back(self, logged_in_client, user, db_conn):
+        import automation_keys_repo
+
+        key_id, raw_key = automation_keys_repo.create(db_conn, user["id"], "revoked")
+        automation_keys_repo.delete(db_conn, key_id)
+        db_conn.commit()
+        response = logged_in_client.get(
+            "/api/jobs/stats",
+            headers={"X-JobAgent-Api-Key": raw_key},
+        )
+        assert response.status_code == 401
+
+    def test_mismatched_legacy_key_does_not_fall_back(
+        self, logged_in_client, user, monkeypatch,
+    ):
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY", "expected")
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", str(user["id"]))
+        response = logged_in_client.get(
+            "/api/jobs/stats",
+            headers={"X-JobAgent-Api-Key": "wrong"},
+        )
+        assert response.status_code == 401
+
+    def test_missing_legacy_owner_does_not_fall_back(
+        self, logged_in_client, monkeypatch,
+    ):
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY", "expected")
+        monkeypatch.setattr("deps.JOBAGENT_API_KEY_USER_ID", "999999")
+        response = logged_in_client.get(
+            "/api/jobs/stats",
+            headers={"X-JobAgent-Api-Key": "expected"},
+        )
+        assert response.status_code == 401
+
+    def test_unknown_key_cannot_write_through_session(
+        self, logged_in_client, db_conn,
+    ):
+        response = logged_in_client.post(
+            "/api/jobs",
+            headers={"X-JobAgent-Api-Key": "unknown"},
+            json={"title": "Must not exist", "url": "https://example.com/rejected"},
+        )
+        assert response.status_code == 401
+        cur = db_conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM job_postings")
+        assert cur.fetchone()[0] == 0
+
+    def test_deleted_owner_key_is_rejected(self, client, user, db_conn):
+        import automation_keys_repo
+        import users_repo
+
+        _, raw_key = automation_keys_repo.create(db_conn, user["id"], "deleted-owner")
+        users_repo.delete(db_conn, user["id"])
+        db_conn.commit()
+        response = client.get(
+            "/api/jobs/stats",
+            headers={"X-JobAgent-Api-Key": raw_key},
+        )
+        assert response.status_code == 401
+
+    def test_no_header_still_uses_session(self, logged_in_client):
+        assert logged_in_client.get("/api/jobs/stats").status_code == 200

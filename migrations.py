@@ -13,6 +13,15 @@ _SCHEMA = """
         created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS automation_keys (
+        id                 INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id            INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        key_hash           TEXT UNIQUE NOT NULL,
+        label              TEXT NOT NULL,
+        can_access_catalog BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS job_postings (
         id               TEXT PRIMARY KEY,
         title            TEXT NOT NULL,

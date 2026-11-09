@@ -3,7 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 import dismissed_items_repo
 import jobs_repo
 from db import get_db
-from deps import get_current_user, require_automation_client
+from deps import (
+    get_current_user,
+    require_automation_client,
+    require_catalog_automation_client,
+)
 from models import (
     DismissedItemCreate, JobCreate, JobCreateResult, JobDescriptionUpdate, JobOut,
     JobRankingBatchUpdate, JobRankingUpdate, JobScoreAndStatusUpdate, JobScoreUpdate,
@@ -185,7 +189,7 @@ def catalog_missing_facts(
     schema_version: int,
     limit: int = Query(200, ge=1, le=2000),
     max_age_days: int = Query(14, ge=1, le=90),
-    user: dict = Depends(require_automation_client),
+    user: dict = Depends(require_catalog_automation_client),
     conn=Depends(get_db),
 ):
     return jobs_repo.get_shared_missing_facts(conn, schema_version, limit, max_age_days)
@@ -193,7 +197,7 @@ def catalog_missing_facts(
 
 @router.get("/catalog/urls")
 def catalog_urls(
-    user: dict = Depends(require_automation_client), conn=Depends(get_db),
+    user: dict = Depends(require_catalog_automation_client), conn=Depends(get_db),
 ):
     return {"urls": list(jobs_repo.get_all_shared_urls(conn))}
 
@@ -217,7 +221,7 @@ def create_job(job: JobCreate, user: dict = Depends(get_current_user), conn=Depe
 
 @router.post("/catalog", response_model=JobCreateResult)
 def create_catalog_job(
-    job: JobCreate, user: dict = Depends(require_automation_client), conn=Depends(get_db),
+    job: JobCreate, user: dict = Depends(require_catalog_automation_client), conn=Depends(get_db),
 ):
     result = jobs_repo.insert(conn, None, job.model_dump(), attach_to_user=False)
     return JobCreateResult(**result)
@@ -226,7 +230,7 @@ def create_catalog_job(
 @router.patch("/catalog/{job_id}/description")
 def update_catalog_description(
     job_id: str, body: JobDescriptionUpdate,
-    user: dict = Depends(require_automation_client), conn=Depends(get_db),
+    user: dict = Depends(require_catalog_automation_client), conn=Depends(get_db),
 ):
     survivor_id = jobs_repo.update_description(conn, job_id, body.description)
     return {"id": survivor_id}
@@ -235,7 +239,7 @@ def update_catalog_description(
 @router.put("/catalog/{job_id}/facts")
 def update_catalog_facts(
     job_id: str, body: JobFactsUpdate,
-    user: dict = Depends(require_automation_client), conn=Depends(get_db),
+    user: dict = Depends(require_catalog_automation_client), conn=Depends(get_db),
 ):
     survivor_id = jobs_repo.update_facts(
         conn, job_id, body.schema_version, body.model, body.content_hash, body.facts, body.provenance,

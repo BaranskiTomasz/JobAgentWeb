@@ -1,4 +1,5 @@
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -67,6 +68,7 @@ class TestCatalogCollectionRoutes:
         monkeypatch.setattr(scheduler, "modify_job", record_modify_job)
         monkeypatch.setattr(main.app.state, "scheduler", scheduler, raising=False)
         main.app.state.catalog_collection_running.clear()
+        main.app.state.catalog_collection_last_trigger = None
 
         response = client.post(_RUN_NOW_PATH, headers=headers)
         status = client.get(_STATUS_PATH, headers=headers)
@@ -123,6 +125,7 @@ class TestCatalogCollectionRoutes:
 
             monkeypatch.setattr(scheduler, "modify_job", record_modify_job)
             monkeypatch.setattr(main.app.state, "scheduler", scheduler, raising=False)
+            main.app.state.catalog_collection_last_trigger = None
 
             response = client.post(_RUN_NOW_PATH, headers=headers)
             status = client.get(_STATUS_PATH, headers=headers)
@@ -135,6 +138,86 @@ class TestCatalogCollectionRoutes:
         finally:
             release.set()
             scheduler.shutdown(wait=True)
+
+    def test_immediate_second_trigger_is_on_cooldown(
+        self, client, user, monkeypatch,
+    ):
+        headers = _automation_headers(user, monkeypatch)
+
+        class Scheduler:
+            calls = 0
+
+            def modify_job(self, *_args, **_kwargs):
+                self.calls += 1
+
+        scheduler = Scheduler()
+        monkeypatch.setattr(main.app.state, "scheduler", scheduler, raising=False)
+        main.app.state.catalog_collection_running.clear()
+        main.app.state.catalog_collection_last_trigger = None
+        first = client.post(_RUN_NOW_PATH, headers=headers)
+        second = client.post(_RUN_NOW_PATH, headers=headers)
+        assert first.json() == {"status": "trigger_requested"}
+        assert second.json() == {"status": "cooldown"}
+        assert scheduler.calls == 1
+
+    def test_trigger_after_cooldown_is_accepted(self, client, user, monkeypatch):
+        headers = _automation_headers(user, monkeypatch)
+
+        class Scheduler:
+            calls = 0
+
+            def modify_job(self, *_args, **_kwargs):
+                self.calls += 1
+
+        scheduler = Scheduler()
+        monkeypatch.setattr(main.app.state, "scheduler", scheduler, raising=False)
+        main.app.state.catalog_collection_running.clear()
+        main.app.state.catalog_collection_last_trigger = time.monotonic() - 901
+        response = client.post(_RUN_NOW_PATH, headers=headers)
+        assert response.json() == {"status": "trigger_requested"}
+        assert scheduler.calls == 1
+
+    def test_already_running_takes_precedence_over_cooldown(
+        self, client, user, monkeypatch,
+    ):
+        headers = _automation_headers(user, monkeypatch)
+        main.app.state.catalog_collection_running.set()
+        main.app.state.catalog_collection_last_trigger = time.monotonic()
+        try:
+            response = client.post(_RUN_NOW_PATH, headers=headers)
+        finally:
+            main.app.state.catalog_collection_running.clear()
+        assert response.json() == {"status": "already_running"}
+
+    def test_cooldown_applies_across_automation_identities(
+        self, client, user, other_user, db_conn, monkeypatch,
+    ):
+        import automation_keys_repo
+
+        legacy_headers = _automation_headers(user, monkeypatch)
+        _, database_key = automation_keys_repo.create(
+            db_conn, other_user["id"], "second identity",
+        )
+        db_conn.commit()
+
+        class Scheduler:
+            calls = 0
+
+            def modify_job(self, *_args, **_kwargs):
+                self.calls += 1
+
+        scheduler = Scheduler()
+        monkeypatch.setattr(main.app.state, "scheduler", scheduler, raising=False)
+        main.app.state.catalog_collection_running.clear()
+        main.app.state.catalog_collection_last_trigger = None
+        first = client.post(_RUN_NOW_PATH, headers=legacy_headers)
+        second = client.post(
+            _RUN_NOW_PATH,
+            headers={"X-JobAgent-Api-Key": database_key},
+        )
+        assert first.json() == {"status": "trigger_requested"}
+        assert second.json() == {"status": "cooldown"}
+        assert scheduler.calls == 1
 
 
 def test_catalog_running_flag_clears_when_collection_raises(monkeypatch):
@@ -173,6 +256,7 @@ def test_run_now_blocks_on_the_lock_while_a_transition_holds_it(monkeypatch):
     monkeypatch.setattr(scheduler, "modify_job", record_modify_job)
     monkeypatch.setattr(main.app.state, "scheduler", scheduler, raising=False)
     main.app.state.catalog_collection_running.clear()
+    main.app.state.catalog_collection_last_trigger = None
     fake_lock = _SignalingLock()
     monkeypatch.setattr(catalog_admin, "catalog_collection_lock", fake_lock)
 
@@ -233,6 +317,7 @@ def test_run_now_sees_already_running_after_a_real_tracked_transition(monkeypatc
 
     monkeypatch.setattr("collectors.catalog_runner.run_catalog_collection", slow_run_catalog_collection)
     main.app.state.catalog_collection_running.clear()
+    main.app.state.catalog_collection_last_trigger = None
 
     original_modify_job = scheduler.modify_job
 

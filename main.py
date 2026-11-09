@@ -62,6 +62,7 @@ async def lifespan(app: FastAPI):
     from apscheduler.schedulers.background import BackgroundScheduler
     scheduler = BackgroundScheduler(timezone="UTC")
     app.state.catalog_collection_running = Event()
+    app.state.catalog_collection_last_trigger = None
     app.state.scheduler = scheduler
     scheduler.add_job(
         _run_scheduled_catalog_collection, "interval", days=1,

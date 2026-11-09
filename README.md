@@ -37,7 +37,9 @@ JobAgentWeb stores `score_fingerprint` and `ranking_fingerprint` as opaque value
 
 Username/password, bcrypt-hashed (`security.py`), backed by Starlette's signed-cookie `SessionMiddleware` — no JWT, no OAuth, no separate session table. `deps.get_current_user` resolves the session cookie to a `users` row on every request; `deps.require_admin` additionally gates on `is_admin`. Registration requires a shared invite code (`config.INVITE_CODE`, checked in `routers/auth.py`) — unset it and `/register` refuses everyone, deny-by-default. See [Deployment](#deployment) for how the current reference deployment also restricts network-level access on top of that.
 
-A second auth path exists for the local JobAgent desktop client: if both `JOBAGENT_API_KEY` and `JOBAGENT_API_KEY_USER_ID` are set, a request carrying a matching `X-JobAgent-Api-Key` header authenticates as that one user_id directly, bypassing the session cookie entirely (see `deps.get_current_user`). This lets a long-running local pipeline authenticate without ever needing interactive re-login, but it's explicitly scoped to one account's own automation — it can never reach `/admin` routes, even if the configured user_id happens to be an admin.
+A second auth path exists for JobAgent automation clients. Each user can have one or more revocable keys stored as SHA-256 hashes in Postgres; issue, list, and revoke them with `scripts/issue_automation_key.py`. A key authenticates only as its owner, bypasses interactive session login, and can never reach `/admin`. Catalog access is disabled by default and can be granted per key with `--can-access-catalog`.
+
+The legacy `JOBAGENT_API_KEY` and `JOBAGENT_API_KEY_USER_ID` environment variables remain supported as a single-user fallback with full catalog access. `JOBAGENT_API_KEY_USER_ID` also controls attribution of server-side catalog-extraction usage. If an `X-JobAgent-Api-Key` header is present but unknown, revoked, or mapped to a missing user, authentication fails with 401; it never falls back to a session cookie.
 
 ### Startup
 
@@ -89,14 +91,26 @@ Visit `http://localhost:8000` to open the public Python catalog. Browsing requir
 
 ### Connect a local JobAgent
 
-JobAgentWeb owns the database; a local JobAgent must connect through HTTP and must not receive PostgreSQL credentials. Configure the server-side automation identity in JobAgentWeb:
+JobAgentWeb owns the database; a local JobAgent must connect through HTTP and must not receive PostgreSQL credentials. Issue a key on the server, where Postgres is reachable:
+
+```bash
+POSTGRES_PASSWORD=... python scripts/issue_automation_key.py --username maryna --label maryna-laptop
+```
+
+The command prints the raw key once. Configure that key in JobAgent, or override it for one run to select an identity:
+
+```bash
+JOBAGENT_API_KEY=<maryna-key> .venv/bin/python scripts/run_all.py
+```
+
+For the still-supported legacy single-user fallback, configure JobAgentWeb:
 
 ```dotenv
 JOBAGENT_API_KEY=<random-secret>
 JOBAGENT_API_KEY_USER_ID=<target-user-id>
 ```
 
-Configure the matching client values in JobAgent's `.env`:
+Then configure the matching client values in JobAgent's `.env`:
 
 ```dotenv
 JOBAGENTWEB_BASE_URL=https://your-jobagentweb.example

@@ -45,7 +45,7 @@ def _clean_tables():
     try:
         cur = conn.cursor()
         cur.execute("""
-            TRUNCATE users, job_postings, user_job_states, job_embeddings,
+            TRUNCATE automation_keys, users, job_postings, user_job_states, job_embeddings,
                      sessions, criteria, cv_profiles, preference_profiles,
                      usage_log, cost_summaries, excluded_search_queries,
                      candidate_preferences, dismissed_score_items, search_stats
