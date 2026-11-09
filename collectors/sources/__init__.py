@@ -4,6 +4,7 @@ from .devbg import DevBGSource
 from .greenhouse import GreenhouseSource
 from .hackernews import HackerNewsSource
 from .himalayas import HimalayasSource
+from .jobgether import JobgetherSource
 from .jobicy import JobicySource
 from .jobscollider import JobsColliderSource
 from .justjoin import JustJoinSource
@@ -19,7 +20,7 @@ _REGISTRY = {
     "arbeitnow": ArbeitnowSource, "arbeitnow_uk": ArbeitnowUKSource,
     "ashby": AshbySource, "greenhouse": GreenhouseSource, "hackernews": HackerNewsSource,
     "devbg": DevBGSource,
-    "himalayas": HimalayasSource, "jobicy": JobicySource, "jobscollider": JobsColliderSource,
+    "himalayas": HimalayasSource, "jobgether": JobgetherSource, "jobicy": JobicySource, "jobscollider": JobsColliderSource,
     "justjoin": JustJoinSource, "lever": LeverSource, "nofluffjobs": NoFluffJobsSource,
     "remoteok": RemoteOKSource, "remotive": RemotiveSource, "solidjobs": SolidJobsSource,
     "weworkremotely": WWRSource, "workingnomads": WorkingNomadsSource,

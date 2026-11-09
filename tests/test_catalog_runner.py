@@ -203,3 +203,80 @@ def test_catalog_gate_uses_anthropic_tool_schema(monkeypatch):
     facts = catalog_extractor.extract_catalog_gate("A remote job in Poland")
     assert facts["remote_available"] is True
     assert calls[0]["tool_choice"] == {"type": "tool", "name": "submit_catalog_gate"}
+
+
+def test_catalog_runner_records_source_diagnostics_and_clears_between_searches(monkeypatch):
+    # AC14: records each source's own last_search_diagnostics into search_stats
+    # instead of hardcoding source_status="ok", respects allowlist, and clears
+    # diagnostics before each search.
+    stats = []
+
+    class DiagnosticStubSource:
+        def __init__(self, **_):
+            self.calls = 0
+            self.last_search_diagnostics = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def login(self):
+            return None
+
+        def search(self, query, location, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                self.last_search_diagnostics = {
+                    "source_status": "partial",
+                    "source_error": "rate limited partially",
+                    "upstream_found": 50,
+                    "query_matched": 40,
+                    "date_matched": 30,
+                    "geo_matched": 20,
+                    "source_returned": 10,
+                    "disallowed_key": "should_be_filtered",
+                }
+                return [RawJob("PHP Developer", "Acme", "Remote Poland", "https://diag.test/job1", "stub_source", description="PHP Developer role")]
+            # Call 2 does not set last_search_diagnostics; verify it was cleared
+            # and doesn't inherit call 1's values
+            assert self.last_search_diagnostics == {}
+            return []
+
+        def fetch_description(self, _url):
+            return None
+
+    monkeypatch.setattr(catalog_runner, "available", lambda: ["stub_source"])
+    monkeypatch.setattr(catalog_runner, "make", lambda *_args, **_kwargs: DiagnosticStubSource())
+    monkeypatch.setattr(catalog_runner.jobs_repo, "get_all_shared_urls", lambda _conn: set())
+    monkeypatch.setattr(catalog_runner.jobs_repo, "insert", lambda *_args, **_kwargs: {"job_id": "job-1", "posting_created": True})
+    monkeypatch.setattr(catalog_runner.jobs_repo, "get_shared_missing_facts", lambda *_args: [])
+    monkeypatch.setattr(catalog_runner.catalog_repo, "attach_catalog_for_all_users", lambda _conn: {})
+    monkeypatch.setattr(
+        catalog_runner.search_stats_repo, "record",
+        lambda _conn, _uid, _sid, source, query, loc, cards, new, **kwargs: stats.append(
+            {"source": source, "query": query, "location": loc, "cards": cards, "new": new, **kwargs}
+        ),
+    )
+
+    result = catalog_runner.run_catalog_collection(
+        SimpleNamespace(commit=lambda: None), source_ids=["stub_source"], slot=0,
+    )
+
+    assert result["jobs_found"] >= 1
+    # Check first search recorded partial status and funnel counters from source diagnostics
+    first_stat = stats[0]
+    assert first_stat["source_status"] == "partial"
+    assert first_stat["source_error"] == "rate limited partially"
+    assert first_stat["upstream_found"] == 50
+    assert first_stat["query_matched"] == 40
+    assert first_stat["date_matched"] == 30
+    assert first_stat["geo_matched"] == 20
+    assert first_stat["source_returned"] == 10
+    assert "disallowed_key" not in first_stat
+
+    # Check second search had cleared diagnostics and defaulted to "ok"
+    second_stat = stats[1]
+    assert second_stat["source_status"] == "ok"
+    assert second_stat.get("upstream_found") is None

@@ -67,7 +67,10 @@ def run_catalog_collection(conn, *, days_back: int = 7, max_jobs: int | None = N
                         if max_jobs is not None and new >= max_jobs:
                             break
                         try:
+                            source.last_search_diagnostics = {}
                             raw_jobs = source.search(query, location, known_urls=known_urls)
+                            diagnostics = dict(getattr(source, "last_search_diagnostics", None) or {})
+                            source_returned = len(raw_jobs)
                             raw_jobs = [raw for raw in raw_jobs if job_matches_query(query, raw.title, raw.description)]
                             found += len(raw_jobs)
                             inserted = duplicates = 0
@@ -96,9 +99,19 @@ def run_catalog_collection(conn, *, days_back: int = 7, max_jobs: int | None = N
                                 inserted += 1
                                 if not raw.description:
                                     pending.append((job_id, raw.url))
-                            _record(conn, source_id, query, location, len(raw_jobs), inserted,
-                                    source_returned=len(raw_jobs), global_matched=len(raw_jobs),
-                                    duplicate_found=duplicates, source_status="ok")
+                            allowed_diagnostic_keys = (
+                                "upstream_found", "query_matched", "date_matched", "geo_matched",
+                                "source_returned", "known_url_filtered", "observed_stages",
+                                "source_status", "source_error",
+                            )
+                            filtered_diagnostics = {
+                                k: v for k, v in diagnostics.items() if k in allowed_diagnostic_keys
+                            }
+                            _record(
+                                conn, source_id, query, location, len(raw_jobs), inserted,
+                                global_matched=len(raw_jobs), duplicate_found=duplicates,
+                                **{"source_returned": source_returned, "source_status": "ok", **filtered_diagnostics},
+                            )
                         except Exception as error:
                             conn.rollback()
                             logger.exception("catalog source %s failed for %s/%s", source_id, query, location)

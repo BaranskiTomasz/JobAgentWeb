@@ -25,6 +25,9 @@ _DISPLAY_NAMES = {
     "itpracuj":       "it.pracuj.pl",
     "nofluffjobs":    "NoFluffJobs",
     "solidjobs":      "SOLID.Jobs",
+    "jobgether":      "Jobgether",
+    "dou":            "DOU.ua",
+    "djinni":         "Djinni.co",
 }
 
 
