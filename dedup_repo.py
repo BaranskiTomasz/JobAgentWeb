@@ -15,7 +15,10 @@ from jobs_repo import (
 )
 from source_identity import company_alias, source_identity, title_aliases
 
-DEFAULT_WINDOW_DAYS = 21
+DEFAULT_WINDOW_DAYS = 45  # kept in sync with jobs_repo.py's _DEDUP_WINDOW_DAYS, the
+# live automatic-dedup path's own window, so a caller that omits window_days (the
+# admin UI, scripts/deduplicate_recent.py's own default) audits the same range
+# production actually merges, not a narrower one that looks clean by omission.
 AUTO_MERGE_CONFIDENCE = 0.60
 # A detected source_id collision between postings whose company/location
 # don't actually match - the opposite of a real match signal, despite its
@@ -150,7 +153,8 @@ def _candidate_rows(conn, job_id: str, window_days: int) -> list[dict]:
 
 
 def find_candidates(conn, job_id: str, window_days: int = DEFAULT_WINDOW_DAYS) -> list[dict]:
-    """Return scored cross-source candidates within the rolling 21-day window."""
+    """Return scored cross-source candidates within the rolling window (`window_days`,
+    default DEFAULT_WINDOW_DAYS)."""
     cur = dict_cursor(conn)
     cur.execute(
         """SELECT id, title, company, location, description, source, source_id, url,

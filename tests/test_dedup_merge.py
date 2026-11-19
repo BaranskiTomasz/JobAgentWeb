@@ -115,7 +115,7 @@ def test_uncertain_cross_source_match_is_auto_merged(logged_in_client, db_conn):
     assert {alias["source"] for alias in aliases} == {"jobicy", "remotive"}
 
 
-def test_cross_source_matching_is_limited_to_21_days(logged_in_client, db_conn):
+def test_cross_source_matching_is_limited_to_45_days(logged_in_client, db_conn):
     token = uuid.uuid4().hex
     description = "Build reliable distributed backend services in Python and PostgreSQL. " * 5
     old = _create(
@@ -128,8 +128,8 @@ def test_cross_source_matching_is_limited_to_21_days(logged_in_client, db_conn):
     cur = db_conn.cursor()
     cur.execute(
         """UPDATE job_postings
-           SET created_at = CURRENT_TIMESTAMP - INTERVAL '22 days',
-               posted_at = CURRENT_TIMESTAMP - INTERVAL '22 days'
+           SET created_at = CURRENT_TIMESTAMP - INTERVAL '46 days',
+               posted_at = CURRENT_TIMESTAMP - INTERVAL '46 days'
            WHERE id = %s""",
         (old["job_id"],),
     )

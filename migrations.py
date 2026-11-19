@@ -519,6 +519,7 @@ def init_db(conn) -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_job_postings_identity_fingerprint ON job_postings(identity_fingerprint) WHERE identity_fingerprint IS NOT NULL")
         cur.execute("DROP INDEX IF EXISTS idx_job_postings_content_fingerprint")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_job_postings_content_fingerprint_lookup ON job_postings(content_fingerprint) WHERE content_fingerprint IS NOT NULL")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_job_postings_dedup_window ON job_postings (COALESCE(posted_at, created_at))")
         conn.commit()
 
         for table, column in _DROPPED_COLUMNS:

@@ -21,7 +21,7 @@ def recent_job_ids(conn, days: int) -> list[str]:
     return [row["id"] for row in cur.fetchall()]
 
 
-def run(conn, days: int = 21, apply: bool = False) -> dict:
+def run(conn, days: int = 45, apply: bool = False) -> dict:
     ids = recent_job_ids(conn, days)
     result = {"days": days, "jobs_scanned": 0, "auto_merged": 0, "candidates": 0}
     auto_pairs = set()
@@ -61,7 +61,7 @@ def run(conn, days: int = 21, apply: bool = False) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--days", type=int, default=21, choices=range(1, 91))
+    parser.add_argument("--days", type=int, default=45, choices=range(1, 91))
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
     conn = _get_pool().getconn()

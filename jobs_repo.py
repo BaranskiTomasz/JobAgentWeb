@@ -56,7 +56,9 @@ _TRACKING_PARAMS = {
     "trk", "trackingid",
 }
 
-_DEDUP_WINDOW_DAYS = 21
+# Automatic upload-time dedup window used by _run_late_dedup. The manual
+# scripts/deduplicate_recent.py command has its own configurable --days up to 90.
+_DEDUP_WINDOW_DAYS = 45
 
 
 def canonicalize_url(url: str) -> str:

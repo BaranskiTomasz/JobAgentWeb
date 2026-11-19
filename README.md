@@ -170,20 +170,21 @@ Opening registration to the public beyond the current private/invite-only setup 
 
 New postings are checked during insertion and again after their description or extracted facts change. Only stable source requisition identity is eligible for automatic merging. Exact or highly similar cross-source content without that identity is stored as a review candidate, avoiding destructive merges of separate requisitions that reuse one description template.
 
-For existing data, inspect the previous 21 days without writing anything:
+For existing data, inspect the previous 45 days (matching the live automatic-dedup
+window) without writing anything:
 
 ```bash
 cd /opt/jobagentweb
 set -a
 . ./.env
 set +a
-.venv/bin/python scripts/deduplicate_recent.py --days 21
+.venv/bin/python scripts/deduplicate_recent.py --days 45
 ```
 
 Apply the same analysis only after reviewing the dry-run counts and taking a current backup:
 
 ```bash
-.venv/bin/python scripts/deduplicate_recent.py --days 21 --apply
+.venv/bin/python scripts/deduplicate_recent.py --days 45 --apply
 ```
 
 Dry-run mode rolls back fingerprint refreshes, candidate decisions, and merges. Apply mode records uncertain pairs in `job_dedup_matches`; automatic merges preserve source URLs in `job_posting_aliases` and move shared and per-user child records transactionally to the selected survivor. The audit table deliberately retains the original pair identifiers after a merge, even though the duplicate posting row no longer exists.
