@@ -534,18 +534,30 @@ def get_missing_facts(
 
 def get_shared_missing_facts(
     conn, schema_version: int, limit: int, max_age_days: int = 14,
+    job_ids: list[str] | None = None,
 ) -> list[dict]:
+    # job_ids scopes this to a specific run's own finds (the frequent ATS-only
+    # poll in main.py) instead of the whole shared backlog -- same missing-
+    # facts criteria, just restricted to postings this caller already knows
+    # about, so it can extract its own new jobs without re-touching the
+    # system-wide catch-up the unscoped call exists for (see catalog_runner.py).
     cur = dict_cursor(conn)
+    id_filter = "AND jp.id = ANY(%s)" if job_ids is not None else ""
+    params = [schema_version, max_age_days]
+    if job_ids is not None:
+        params.append(job_ids)
+    params.append(limit)
     cur.execute(
-        """SELECT jp.*
+        f"""SELECT jp.*
              FROM job_postings jp
              LEFT JOIN job_fact_extractions jfe ON jfe.job_id = jp.id
             WHERE jp.description IS NOT NULL AND jp.description != ''
               AND (jfe.job_id IS NULL OR jfe.schema_version < %s)
               AND COALESCE(jp.posted_at, jp.created_at) >= CURRENT_TIMESTAMP - (%s * INTERVAL '1 day')
+              {id_filter}
             ORDER BY jp.created_at DESC
             LIMIT %s""",
-        (schema_version, max_age_days, limit),
+        params,
     )
     result = []
     for row in cur.fetchall():

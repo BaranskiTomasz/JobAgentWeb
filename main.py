@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 import logging
 from pathlib import Path
 from threading import Event
@@ -24,27 +25,66 @@ from routers import (
 )
 
 _BASE_DIR = Path(__file__).parent
+_FREQUENT_POLL_SOURCES = ("ashby", "greenhouse", "lever")
+_FREQUENT_POLL_INTERVAL_HOURS = 2  # also used for the slot bucket size below --
+# keep these in sync, or the CATALOG_QUERIES rotation silently drifts out of
+# step with how often this job actually fires.
 logger = logging.getLogger(__name__)
+
+
+def _frequent_poll_slot(now: datetime) -> int:
+    """Query-rotation slot for the frequent ATS job, keyed to the current UTC
+    interval bucket so each of a day's runs rotates through a different pair
+    of CATALOG_QUERIES instead of all of them repeating the same one that
+    date.today().toordinal() alone (the daily job's own slot=None path) would
+    give. The returned value only ever increases (it does not wrap at
+    midnight) -- queries_for_slot's own modulo over CATALOG_QUERIES is what
+    bounds it. Assumes _FREQUENT_POLL_INTERVAL_HOURS evenly divides 24; a
+    value that doesn't (e.g. 5) would make the last bucket of one day
+    collide with the first bucket of the next."""
+    buckets_per_day = 24 // _FREQUENT_POLL_INTERVAL_HOURS
+    return now.toordinal() * buckets_per_day + (now.hour // _FREQUENT_POLL_INTERVAL_HOURS)
 
 
 def _run_catalog_collection_tracked(
     conn: psycopg2.extensions.connection,
+    source_ids: list[str] | None = None,
 ) -> None:
     from collectors.catalog_runner import run_catalog_collection
 
     with catalog_admin.catalog_collection_lock:
+        if app.state.catalog_collection_running.is_set():
+            # The daily full-catalog job and the frequent ATS-only job are two
+            # separate scheduler entries (different ids), so APScheduler's own
+            # max_instances=1 per job never stops them from overlapping *each
+            # other*. Skip rather than run concurrently -- two writers racing
+            # on the same known_urls snapshot would double-count/duplicate-
+            # attempt inserts, and whichever finishes first would clear this
+            # flag while the other is still genuinely running.
+            logger.info("Skipping scheduled catalog collection: another run is already in progress.")
+            return
         app.state.catalog_collection_running.set()
     try:
-        run_catalog_collection(conn)
+        # The frequent job fires with a fixed source_ids kwarg registered once
+        # at scheduler setup, so it can't carry a precomputed slot of its own.
+        slot = _frequent_poll_slot(datetime.now(timezone.utc)) if source_ids is not None else None
+        # The narrow-source_ids (frequent ATS) path extracts only its own finds
+        # instead of the whole shared backlog, so it can't turn into a 12x/day
+        # repeat of the full-catalog catch-up -- see run_catalog_collection's
+        # own docstring for why attach still always runs regardless.
+        run_catalog_collection(
+            conn, source_ids=source_ids, slot=slot,
+            scoped_extraction=source_ids is not None,
+        )
     finally:
         with catalog_admin.catalog_collection_lock:
             app.state.catalog_collection_running.clear()
 
 
-def _run_scheduled_catalog_collection() -> None:
+def _run_scheduled_catalog_collection(source_ids: list[str] | None = None) -> None:
     conn = _get_pool().getconn()
     try:
-        _run_catalog_collection_tracked(conn)
+        _run_catalog_collection_tracked(conn, source_ids=source_ids)
     except Exception:
         conn.rollback()
         logger.exception("scheduled catalog collection failed")
@@ -67,6 +107,12 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         _run_scheduled_catalog_collection, "interval", days=1,
         id="catalog_collection", replace_existing=True, max_instances=1, coalesce=True,
+    )
+    scheduler.add_job(
+        _run_scheduled_catalog_collection, "interval", hours=_FREQUENT_POLL_INTERVAL_HOURS,
+        kwargs={"source_ids": list(_FREQUENT_POLL_SOURCES)},
+        id="catalog_collection_ats_frequent", replace_existing=True,
+        max_instances=1, coalesce=True,
     )
     scheduler.start()
     try:

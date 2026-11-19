@@ -106,6 +106,67 @@ def test_catalog_runner_attaches_after_extraction(monkeypatch):
     assert stages == ["commit", "extract", "attach", "commit"]
 
 
+def test_catalog_runner_scoped_extraction_skips_backlog_when_nothing_new(monkeypatch):
+    # The frequent, narrow-source_ids poll (main.py's 2-hourly ATS job) passes
+    # scoped_extraction=True specifically so it never touches the whole shared
+    # backlog -- but attach must still run every time regardless (it's what
+    # makes an already-extracted posting visible to users, and it's DB-only,
+    # not Anthropic-costed, so there's no cost reason to gate it).
+    stages = []
+    monkeypatch.setattr(catalog_runner, "available", lambda: ["example"])
+    monkeypatch.setattr(catalog_runner, "make", lambda *_args, **_kwargs: _Source([]))
+    monkeypatch.setattr(catalog_runner.jobs_repo, "get_all_shared_urls", lambda _conn: set())
+    monkeypatch.setattr(
+        catalog_runner.jobs_repo, "get_shared_missing_facts",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("backlog should not be queried")),
+    )
+    monkeypatch.setattr(catalog_runner.search_stats_repo, "record", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        catalog_runner.catalog_repo, "attach_catalog_for_all_users",
+        lambda _conn: stages.append("attach") or {1: 2},
+    )
+
+    result = catalog_runner.run_catalog_collection(
+        SimpleNamespace(commit=lambda: stages.append("commit")), source_ids=["example"], slot=0,
+        extractor=lambda *_args, **_kwargs: stages.append("extract") or 1,
+        scoped_extraction=True,
+    )
+
+    # No jobs found this run -> nothing to extract -> extractor never called,
+    # but attach still runs.
+    assert stages == ["commit", "attach"]
+    assert result["extracted"] == 0
+
+
+def test_catalog_runner_scoped_extraction_extracts_only_this_runs_finds(monkeypatch):
+    calls = []
+    monkeypatch.setattr(catalog_runner, "available", lambda: ["example"])
+    monkeypatch.setattr(catalog_runner, "make", lambda *_args, **_kwargs: _Source([_job()]))
+    monkeypatch.setattr(catalog_runner.jobs_repo, "get_all_shared_urls", lambda _conn: set())
+    monkeypatch.setattr(
+        catalog_runner.jobs_repo, "insert",
+        lambda *_args, **_kwargs: {"job_id": "fresh-ats-job", "posting_created": True},
+    )
+
+    def get_shared_missing_facts(*_args, job_ids=None, **_kwargs):
+        calls.append(job_ids)
+        assert job_ids == ["fresh-ats-job"], "must be scoped to this run's own finds, not the whole backlog"
+        return [{"id": "fresh-ats-job", "description": "x"}]
+
+    monkeypatch.setattr(catalog_runner.jobs_repo, "get_shared_missing_facts", get_shared_missing_facts)
+    monkeypatch.setattr(catalog_runner.search_stats_repo, "record", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(catalog_runner.catalog_repo, "attach_catalog_for_all_users", lambda _conn: {1: 1})
+
+    result = catalog_runner.run_catalog_collection(
+        SimpleNamespace(commit=lambda: None), source_ids=["example"], slot=0,
+        extractor=lambda _conn, jobs, **_kwargs: len(jobs),
+        scoped_extraction=True,
+    )
+
+    assert calls == [["fresh-ats-job"]]
+    assert result["extracted"] == 1
+
+
 def test_catalog_runner_continues_when_source_raises(monkeypatch):
     stats = []
     monkeypatch.setattr(catalog_runner.jobs_repo, "get_all_shared_urls", lambda _conn: set())

@@ -39,14 +39,23 @@ def _record(conn, source: str, query: str, location: str, cards: int, new: int, 
 
 def run_catalog_collection(conn, *, days_back: int = 7, max_jobs: int | None = None,
                            max_jobs_per_source: int | None = None, slot: int | None = None,
-                           source_ids: list[str] | None = None, extractor=run_extraction) -> dict:
+                           source_ids: list[str] | None = None, extractor=run_extraction,
+                           scoped_extraction: bool = False) -> dict:
     """Collect, enrich descriptions, then extract facts for this run's new jobs.
 
     Each source and each extraction is isolated so scheduled execution remains
     healthy when a board or Anthropic has a transient failure.
+
+    scoped_extraction=True extracts facts only for THIS run's own newly
+    collected job_ids instead of the whole shared backlog -- for the frequent,
+    narrow-source_ids poll (main.py's 2-hourly ATS job), so it can't turn into
+    a 12x/day repeat of the full-catalog catch-up. attach_catalog_for_all_users
+    always runs regardless of this flag: it's what makes an extracted posting
+    visible to any user at all, and it's a DB-only read/write, not Anthropic-
+    costed, so there's no reason to gate it.
     """
     queries = queries_for_slot(slot if slot is not None else date.today().toordinal())
-    sources = source_ids or available()
+    sources = available() if source_ids is None else source_ids
     known_urls = jobs_repo.get_all_shared_urls(conn)
     job_ids: list[str] = []
     found = new = 0
@@ -134,12 +143,27 @@ def run_catalog_collection(conn, *, days_back: int = 7, max_jobs: int | None = N
                 logger.exception("could not record catalog source failure: %s", source_id)
     extracted = 0
     try:
-        # Not scoped to this run's own job_ids: a prior run's extraction can
-        # fail wholesale (an Anthropic outage, say) and leave postings behind
-        # with missing facts that nothing will ever re-insert, since they're
-        # already in known_urls. This picks up that backlog too, not just
-        # today's new postings.
-        pending_facts = jobs_repo.get_shared_missing_facts(conn, FACT_SCHEMA_VERSION, _EXTRACTION_BACKLOG_LIMIT)
+        if scoped_extraction:
+            # Only this run's own finds -- the frequent, narrow-source_ids poll's
+            # whole point is to stay cheap, so it must not also re-run the
+            # system-wide backlog catch-up below on every 2-hourly fire. The
+            # job_ids filter already bounds the result to at most len(job_ids)
+            # rows, so pass that (not the shared-backlog limit) as the cap --
+            # otherwise a single run finding >_EXTRACTION_BACKLOG_LIMIT new
+            # postings would silently lose extraction for the rest of them.
+            pending_facts = (
+                jobs_repo.get_shared_missing_facts(
+                    conn, FACT_SCHEMA_VERSION, len(job_ids), job_ids=job_ids,
+                )
+                if job_ids else []
+            )
+        else:
+            # Not scoped to this run's own job_ids: a prior run's extraction can
+            # fail wholesale (an Anthropic outage, say) and leave postings behind
+            # with missing facts that nothing will ever re-insert, since they're
+            # already in known_urls. This picks up that backlog too, not just
+            # today's new postings.
+            pending_facts = jobs_repo.get_shared_missing_facts(conn, FACT_SCHEMA_VERSION, _EXTRACTION_BACKLOG_LIMIT)
         extracted = extractor(conn, pending_facts, catalog=True) if pending_facts else 0
     except Exception:
         logger.exception("catalog extraction stage failed")

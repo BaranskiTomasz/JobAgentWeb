@@ -221,7 +221,8 @@ class TestCatalogCollectionRoutes:
 
 
 def test_catalog_running_flag_clears_when_collection_raises(monkeypatch):
-    def fail(_conn):
+    def fail(_conn, *, source_ids=None, **_kwargs):
+        assert source_ids is None
         assert main.app.state.catalog_collection_running.is_set()
         raise RuntimeError("collection failed")
 
@@ -232,6 +233,43 @@ def test_catalog_running_flag_clears_when_collection_raises(monkeypatch):
         main._run_catalog_collection_tracked(object())
 
     assert not main.app.state.catalog_collection_running.is_set()
+
+
+def test_frequent_poll_slot_advances_each_interval_bucket_without_wrapping():
+    hours = main._FREQUENT_POLL_INTERVAL_HOURS
+    day_one = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    first_bucket = main._frequent_poll_slot(day_one.replace(hour=0))
+    same_bucket_later = main._frequent_poll_slot(day_one.replace(hour=hours - 1))
+    next_bucket = main._frequent_poll_slot(day_one.replace(hour=hours))
+    next_day_first_bucket = main._frequent_poll_slot(day_one.replace(day=2, hour=0))
+
+    assert same_bucket_later == first_bucket
+    assert next_bucket == first_bucket + 1
+    # A full day's worth of buckets separates the same hour on consecutive days.
+    assert next_day_first_bucket == first_bucket + (24 // hours)
+
+
+def test_tracked_collection_skips_when_another_run_is_already_in_progress(monkeypatch):
+    # The daily full-catalog job and the frequent ATS-only job are two separate
+    # scheduler entries, so APScheduler's own max_instances=1 per job id never
+    # stops them from overlapping each other -- this guard is what does.
+    calls = []
+    monkeypatch.setattr(
+        "collectors.catalog_runner.run_catalog_collection",
+        lambda *_args, **_kwargs: calls.append(1),
+    )
+    main.app.state.catalog_collection_running.set()
+
+    main._run_catalog_collection_tracked(object())
+
+    assert calls == []
+    # Still set afterward: this call didn't own the flag (it never set it,
+    # since it was already set on entry), so it must not clear it either --
+    # that would prematurely signal "done" for the run actually still in
+    # progress.
+    assert main.app.state.catalog_collection_running.is_set()
+    main.app.state.catalog_collection_running.clear()
 
 
 def test_run_now_blocks_on_the_lock_while_a_transition_holds_it(monkeypatch):
@@ -307,7 +345,8 @@ def test_run_now_sees_already_running_after_a_real_tracked_transition(monkeypatc
     collection_finished = threading.Event()
     modify_job_calls = []
 
-    def slow_run_catalog_collection(_conn):
+    def slow_run_catalog_collection(_conn, *, source_ids=None, **_kwargs):
+        assert source_ids is None
         collection_started.set()
         # Generous fail-safe against a genuinely hung test, not a race margin:
         # the test's own flow is fully event-driven (collection_started gates
