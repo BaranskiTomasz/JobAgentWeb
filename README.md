@@ -166,8 +166,37 @@ executor loop will use (cross-user, oldest first) — **nothing calls it
 from production yet**, same as every other Wave 1 ticket so far:
 `routers/apply_executions.py` covers manual CRUD + status transitions
 only. No browser automation, ATS HTTP calls, or LLM calls exist anywhere
-in this ticket — the first real sender is the Greenhouse adapter, a
-separate, later ticket.
+in this ticket. The first ATS integration (Greenhouse, below) is
+**read-only** — there is still no sender anywhere in this codebase, and
+none is planned without separate, explicit, human-directed work.
+
+### First ATS adapter: Greenhouse (read-only)
+
+**No submission path exists or is planned to exist here without
+separate, explicit, human-directed work.** Greenhouse's public Jobs
+Board API — the same one `collectors/sources/greenhouse.py` already
+uses for catalog collection — is read-only; there is no documented,
+stable endpoint for actually sending an application (the Rada Trzech
+artifact's own round-3 correction withdrew the opposite assumption after
+review). Actually submitting a Greenhouse application would mean either
+a reverse-engineered embed-form POST or real browser automation, and
+building or exercising either unsupervised is explicitly out of bounds
+for this project — see the standing rule this ticket established.
+
+`ats/greenhouse_schema.py::fetch_job_schema()` fetches one job's real
+application form schema (`GET .../jobs/{id}?questions=true`) and
+flattens it into `GreenhouseFormField` rows — a question group with
+multiple `fields[]` entries (e.g. "Resume/CV": a file upload plus a
+text fallback) produces one row per field, each inheriting the group's
+`label`/`required`. `map_plan_to_schema()` matches an `application_plan`'s
+fields onto that schema (exact `field_name`↔`field_id`, then a
+case-insensitive label fallback) without ever fabricating a value for
+an unmatched field; `missing_required_fields()` reports what's still
+missing. **Greenhouse's response also carries a separate
+`demographic_questions` key (voluntary EEO self-identification — race,
+gender, veteran status) that this code deliberately never reads, parses,
+or surfaces, under any circumstance** — no automated system has
+business touching protected-class voluntary disclosure data.
 
 ### Recruitment funnel events
 
