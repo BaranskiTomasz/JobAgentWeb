@@ -21,7 +21,7 @@ Search statistics retain a retrieval funnel (`upstream_found`, `query_matched`, 
 The schema splits cleanly in two, defined in `migrations.py`:
 
 - **Shared** (`job_postings`, `job_embeddings`) — a posting's text, source metadata, and LLM-extracted tags are objective facts about the listing, independent of any candidate. Scraped and extracted once, reused by every user who finds the same posting. `job_posting_aliases` retains every source occurrence while `job_dedup_matches` records candidate and completed cross-source decisions.
-- **Per-user** (`user_job_states`, plus `criteria`, `cv_profiles`, `preference_profiles`, `candidate_preferences`, `usage_log`, `cost_summaries`, `search_stats`, `sessions`, `excluded_search_queries`, `dismissed_score_items`, `candidate_facts`, `automation_settings`, `autonomy_decisions`) — everything that's a judgment about *this* candidate: status, score, rank, would-apply flag, preferences, CV, cost history. Every one of these tables carries a `user_id` FK with `ON DELETE CASCADE`, so deleting a user's account cleanly removes everything of theirs without touching the shared pool.
+- **Per-user** (`user_job_states`, plus `criteria`, `cv_profiles`, `preference_profiles`, `candidate_preferences`, `usage_log`, `cost_summaries`, `search_stats`, `sessions`, `excluded_search_queries`, `dismissed_score_items`, `candidate_facts`, `automation_settings`, `autonomy_decisions`, `application_plans`, `application_plan_fields`) — everything that's a judgment about *this* candidate: status, score, rank, would-apply flag, preferences, CV, cost history. Every one of these tables carries a `user_id` FK with `ON DELETE CASCADE`, so deleting a user's account cleanly removes everything of theirs without touching the shared pool. `application_plan_field_facts` has no `user_id` of its own — it's scoped transitively through `application_plan_fields.plan_id` → `application_plans.user_id`.
 
 `user_job_states` joins to `job_postings` on `(user_id, job_id)` — one row per (user, posting) pair. This is why "delete jobs" (`jobs_repo.delete_by_filter`) only ever removes `user_job_states` rows: it's removing the posting from *your* view, never the shared posting other users may still have.
 
@@ -99,6 +99,44 @@ is the decision engine, settings, and audit trail only
 (`GET`/`PATCH /api/autonomy/settings`, `GET /api/autonomy/decisions`).
 The Apply Executor that will actually call it is a separate, later
 ticket.
+
+### Application Plan
+
+Per the artifact's A1: the Apply Executor won't fill a browser form
+straight from a prompt — it first builds an **Application Plan**, a
+structured artifact naming every form field, its value, which candidate
+fact(s) ground it, a confidence, and whether it's an irreversible/
+negotiable field (salary expectation, notice period). This is the thing
+reviewed/audited, not a browser screen; it's also what feeds
+`autonomy_policy.py::autonomy_inputs_from_plan()` to compute
+`fields_fully_grounded`/`has_irreversible_negotiable_fields` for the
+autonomy ladder above, rather than those two signals being guessed
+separately.
+
+`application_plans` (header: `job_id`, `status` — `draft`/`ready`/
+`superseded`) has one `application_plans → application_plan_fields`
+(one row per named field) → `application_plan_field_facts` (join table)
+chain. The join table is a real many-to-many — a field can be grounded
+in several facts, a fact can ground many fields across many plans — so
+it's a proper table with FK enforcement on both sides, not an array
+column (an array can't carry a foreign key). Re-`PUT`ting the same
+field name replaces its value *and* fully replaces its fact links
+(old join rows deleted before new ones are inserted) rather than
+accumulating stale grounding. `upsert_field` validates every supplied
+fact id against `candidate_facts.user_id` before linking it — a field
+can only cite the calling user's own facts.
+
+**Known, accepted limitation**: `application_plan_fields.is_grounded`
+is set once, at write time, from whether any facts were supplied — it
+is not retroactively recomputed if a cited fact is later hard-deleted
+(the join row cascades away, but the flag doesn't follow). Acceptable
+because facts are normally `deactivate`d, not deleted; worth revisiting
+only if it becomes a real problem.
+
+**Nothing builds a plan's actual content from a real job posting yet**
+(`routers/application_plans.py` covers manual CRUD only) — the field-
+name-to-ATS-mapping logic and the Apply Executor that drives all of this
+are separate, later tickets.
 
 ### Recruitment funnel events
 
@@ -218,6 +256,7 @@ JSON endpoints live under `/api/*`. The read-only `/api/public/jobs`, `/search`,
 | `criteria` | `/api/criteria` | Collector search-dimension config |
 | `candidate_facts` | `/api/candidate-facts` | Candidate Fact Store CRUD (manual entry only for now) |
 | `autonomy` | `/api/autonomy` | Autonomy-ladder settings + decision audit log (no production caller yet) |
+| `application_plans` | `/api/application-plans` | Application Plan CRUD (manual entry only for now) |
 | `preference_profiles` | `/api/preference-profile` | Distilled preference signals |
 | `candidate_preferences` | `/api/candidate-preferences` | Questionnaire answers |
 | `excluded_queries` | `/api/excluded-search-queries` | Auto-pruned search queries |

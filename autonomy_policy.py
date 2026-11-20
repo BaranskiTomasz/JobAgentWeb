@@ -65,3 +65,13 @@ def filter_to_allowed_fields(
         name for name in application_plan_fields if name not in candidate_fact_field_names
     ]
     return allowed_fields, dropped_field_names
+
+
+def autonomy_inputs_from_plan(plan_fields: list[dict], **overrides) -> AutonomyInputs:
+    fields_fully_grounded = all(f["is_grounded"] for f in plan_fields)
+    has_irreversible_negotiable_fields = any(f["is_negotiable_or_irreversible"] for f in plan_fields)
+    return AutonomyInputs(
+        fields_fully_grounded=fields_fully_grounded,
+        has_irreversible_negotiable_fields=has_irreversible_negotiable_fields,
+        **overrides,
+    )

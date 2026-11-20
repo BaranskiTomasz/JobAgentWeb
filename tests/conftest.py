@@ -48,7 +48,9 @@ def _clean_tables():
             TRUNCATE automation_keys, users, job_postings, user_job_states, job_embeddings,
                      sessions, criteria, cv_profiles, preference_profiles,
                      usage_log, cost_summaries, excluded_search_queries,
-                     candidate_preferences, dismissed_score_items, search_stats
+                     candidate_preferences, dismissed_score_items, search_stats,
+                     candidate_facts, automation_settings, autonomy_decisions,
+                     application_plans
             RESTART IDENTITY CASCADE
         """)
         conn.commit()

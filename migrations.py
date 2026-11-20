@@ -216,6 +216,36 @@ _SCHEMA = """
 
     CREATE INDEX IF NOT EXISTS idx_autonomy_decisions_user_decided ON autonomy_decisions(user_id, decided_at DESC);
 
+    CREATE TABLE IF NOT EXISTS application_plans (
+        id          INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        job_id      TEXT REFERENCES job_postings(id) ON DELETE SET NULL,
+        status      TEXT NOT NULL DEFAULT 'draft',
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_application_plans_user_job ON application_plans(user_id, job_id);
+
+    CREATE TABLE IF NOT EXISTS application_plan_fields (
+        id                             INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        plan_id                        INTEGER NOT NULL REFERENCES application_plans(id) ON DELETE CASCADE,
+        field_name                     TEXT NOT NULL,
+        value                          TEXT NOT NULL,
+        is_grounded                    INTEGER NOT NULL DEFAULT 0,
+        confidence                     REAL,
+        is_negotiable_or_irreversible  INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(plan_id, field_name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_application_plan_fields_plan ON application_plan_fields(plan_id);
+
+    CREATE TABLE IF NOT EXISTS application_plan_field_facts (
+        field_id  INTEGER NOT NULL REFERENCES application_plan_fields(id) ON DELETE CASCADE,
+        fact_id   INTEGER NOT NULL REFERENCES candidate_facts(id) ON DELETE CASCADE,
+        PRIMARY KEY (field_id, fact_id)
+    );
+
     CREATE TABLE IF NOT EXISTS criteria (
         id         INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -495,6 +525,10 @@ _CHECK_CONSTRAINTS = [
     (
         "autonomy_decisions", "autonomy_decisions_level_check",
         "CHECK (level IN ('auto_send', 'review_then_send', 'ask_first'))",
+    ),
+    (
+        "application_plans", "application_plans_status_check",
+        "CHECK (status IN ('draft', 'ready', 'superseded'))",
     ),
 ]
 
