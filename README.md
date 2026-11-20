@@ -33,13 +33,13 @@ Search statistics retain the full collection funnel and source outcome. The API 
 
 `candidate_facts` holds flat, sourced facts about a candidate (work
 experience, education, skills, certifications, projects, languages,
-achievements) — storage and CRUD only for now, part of the Rada Trzech
-roadmap's Wave 1. The design intent (not yet wired up): every future
-generated document/answer must retrieve from and cite this store rather
-than freely generating candidate claims, so each row deliberately keeps
-`source_quote` (the verbatim excerpt it came from) separate from `value`
-(the structured/paraphrased fact) — this is what a later grounding check
-will pin generated sentences back to. It's a flat list on purpose, not an
+achievements), part of the Rada Trzech roadmap's Wave 1. The design
+intent: every generated document/answer must retrieve from and cite
+this store rather than freely generating candidate claims, so each row
+deliberately keeps `source_quote` (the verbatim excerpt it came from)
+separate from `value` (the structured/paraphrased fact) — this is what
+the grounding check (below) pins generated sentences back to, once
+something actually calls it. It's a flat list on purpose, not an
 ontology of linked career entities.
 
 `source` is one of `cv_upload` / `questionnaire_free_text` / `manual`;
@@ -108,11 +108,14 @@ not traceable to a known candidate-fact field name is dropped rather than
 silently sent, never passed through on the strength of model output
 alone.
 
-**Nothing calls `evaluate_autonomy()` from production yet** — this ticket
-is the decision engine, settings, and audit trail only
-(`GET`/`PATCH /api/autonomy/settings`, `GET /api/autonomy/decisions`).
-The Apply Executor that will actually call it is a separate, later
-ticket.
+`apply_decision.py::decide_and_queue()` (below) now calls
+`evaluate_autonomy()` for real, for every plan a user decides on — but
+**every decision still lands at `pending_manual_action` regardless of
+its computed level**, since no automated sender exists anywhere in this
+codebase (see the Greenhouse section below). The level/reasons are
+logged for audit and future tuning, not yet acted on differently.
+`GET`/`PATCH /api/autonomy/settings` and `GET /api/autonomy/decisions`
+remain the only way to inspect or tune this from outside.
 
 ### Application Plan
 
@@ -189,13 +192,18 @@ caller-supplied `idempotency_key` (`UNIQUE` column): calling it twice
 with the same key returns the same row both times rather than creating a
 second attempt — the property the whole ticket exists for, since a crash
 mid-send must be safely retryable without double-submitting a real job
-application. `get_queued_executions()` is the polling query a future
-executor loop will use (cross-user, oldest first) — **nothing calls it
-from production yet**, same as every other Wave 1 ticket so far:
-`routers/apply_executions.py` covers manual CRUD + status transitions
-only. No browser automation, ATS HTTP calls, or LLM calls exist anywhere
-in this ticket. The first ATS integration (Greenhouse, below) is
-**read-only** — there is still no sender anywhere in this codebase, and
+application. `apply_decision.py` (below) now calls `create_execution()`/
+`update_status()` directly for every plan decision, driving each
+execution straight to `pending_manual_action`. `get_queued_executions()`
+is the polling query a future executor *loop* would use (cross-user,
+oldest first) — **nothing calls that one yet**, since nothing in this
+codebase runs executions asynchronously/in the background; everything
+so far happens synchronously within the request that triggered it.
+`routers/apply_executions.py` itself (the HTTP layer) still only sees
+manual CRUD + status-transition calls, no automated caller. No browser
+automation, ATS HTTP calls, or LLM calls exist anywhere in this ticket.
+The first ATS integration (Greenhouse, below) is **read-only** — there
+is still no sender anywhere in this codebase, and
 none is planned without separate, explicit, human-directed work.
 
 ### First ATS adapter: Greenhouse (read-only)
@@ -393,8 +401,8 @@ JSON endpoints live under `/api/*`. The read-only `/api/public/jobs`, `/search`,
 | `dismissed_items` | `/api/jobs/*`, `/api/dismissed-items` | Score-factor dismissals feeding preference distillation |
 | `cv_profiles` | `/api/cv-profiles` | CV upload metadata + active profile |
 | `criteria` | `/api/criteria` | Collector search-dimension config |
-| `candidate_facts` | `/api/candidate-facts` | Candidate Fact Store CRUD (manual entry only for now) |
-| `autonomy` | `/api/autonomy` | Autonomy-ladder settings + decision audit log (no production caller yet) |
+| `candidate_facts` | `/api/candidate-facts` | Candidate Fact Store CRUD; manual entry via this API, automatic entry on CV upload via `cv_fact_extractor.py` |
+| `autonomy` | `/api/autonomy` | Autonomy-ladder settings + decision audit log; `apply_decision.py` now calls the underlying `autonomy_repo`/`autonomy_policy` functions directly (not through this HTTP API) for every plan decision |
 | `application_plans` | `/api/application-plans` | Application Plan CRUD + `/decide` (computes and logs an autonomy decision, creates a pending-manual-action execution) |
 | `apply_executions` | `/api/application-plans/{id}/executions`, `/api/executions` | Apply Executor state machine + idempotent creation; now called by `apply_decision.py` for every plan decision |
 | `preference_profiles` | `/api/preference-profile` | Distilled preference signals |
