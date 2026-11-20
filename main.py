@@ -19,7 +19,7 @@ import users_repo
 from config import SECRET_KEY, SESSION_HTTPS_ONLY
 from db import _get_pool, get_db
 from routers import (
-    admin, auth, candidate_facts, candidate_preferences, catalog_admin, criteria, cv_profiles,
+    admin, auth, autonomy, candidate_facts, candidate_preferences, catalog_admin, criteria, cv_profiles,
     dismissed_items, embeddings, evaluation, excluded_queries, jobs,
     preference_profiles, public_jobs, search_stats, sessions, sources, usage,
 )
@@ -133,6 +133,7 @@ app.include_router(jobs.router)
 app.include_router(dismissed_items.router)
 app.include_router(cv_profiles.router)
 app.include_router(criteria.router)
+app.include_router(autonomy.router)
 app.include_router(candidate_facts.router)
 app.include_router(preference_profiles.router)
 app.include_router(candidate_preferences.router)

@@ -21,7 +21,7 @@ Search statistics retain a retrieval funnel (`upstream_found`, `query_matched`, 
 The schema splits cleanly in two, defined in `migrations.py`:
 
 - **Shared** (`job_postings`, `job_embeddings`) — a posting's text, source metadata, and LLM-extracted tags are objective facts about the listing, independent of any candidate. Scraped and extracted once, reused by every user who finds the same posting. `job_posting_aliases` retains every source occurrence while `job_dedup_matches` records candidate and completed cross-source decisions.
-- **Per-user** (`user_job_states`, plus `criteria`, `cv_profiles`, `preference_profiles`, `candidate_preferences`, `usage_log`, `cost_summaries`, `search_stats`, `sessions`, `excluded_search_queries`, `dismissed_score_items`, `candidate_facts`) — everything that's a judgment about *this* candidate: status, score, rank, would-apply flag, preferences, CV, cost history. Every one of these tables carries a `user_id` FK with `ON DELETE CASCADE`, so deleting a user's account cleanly removes everything of theirs without touching the shared pool.
+- **Per-user** (`user_job_states`, plus `criteria`, `cv_profiles`, `preference_profiles`, `candidate_preferences`, `usage_log`, `cost_summaries`, `search_stats`, `sessions`, `excluded_search_queries`, `dismissed_score_items`, `candidate_facts`, `automation_settings`, `autonomy_decisions`) — everything that's a judgment about *this* candidate: status, score, rank, would-apply flag, preferences, CV, cost history. Every one of these tables carries a `user_id` FK with `ON DELETE CASCADE`, so deleting a user's account cleanly removes everything of theirs without touching the shared pool.
 
 `user_job_states` joins to `job_postings` on `(user_id, job_id)` — one row per (user, posting) pair. This is why "delete jobs" (`jobs_repo.delete_by_filter`) only ever removes `user_job_states` rows: it's removing the posting from *your* view, never the shared posting other users may still have.
 
@@ -60,6 +60,45 @@ manual entry only right now; `POST` always forces `source='manual'`
 server-side regardless of what the client sends. Nothing extracts facts
 from an uploaded CV or the questionnaire into this table yet — that
 wiring, and the grounding-check validator, are separate, later tickets.
+
+### Autonomy ladder + audit log
+
+Per the Rada Trzech artifact's converged idea #3: instead of "human
+approves every application" or "agent sends everything", `autonomy_policy.py::evaluate_autonomy()`
+computes one of three levels — `auto_send`, `review_then_send`,
+`ask_first` — from objective, per-application signals (match confidence,
+whether every form field traces back to a Candidate Fact Store entry, a
+daily auto-send cap, a per-source allowlist, and whether the form has any
+irreversible/negotiable field such as salary expectation). A missing
+grounding (not every field traceable to a fact) always forces
+`ask_first`, overriding every other signal; an irreversible/negotiable
+field present caps the result at `review_then_send` even when everything
+else would otherwise clear `auto_send`. Every branch records a
+human-readable reason string, not an enum name — this is what the future
+audit digest will show verbatim.
+
+`automation_settings` (one row per user — `max_daily_auto_sends`,
+`min_confidence_auto_send`, `allowed_auto_send_sources`) is the lever the
+user tightens or loosens as trust in the system grows; a user with no
+saved row gets the conservative defaults (0 daily auto-sends, 0.9
+confidence floor, no allowed sources — i.e. autonomy effectively off).
+Every computed decision is logged to `autonomy_decisions` for audit,
+keyed off `job_id` with `ON DELETE SET NULL` (not `CASCADE`, unlike every
+other per-job table here) — an audit row must outlive the posting it was
+about, since the `inputs` JSONB column already carries everything that
+mattered.
+
+`autonomy_policy.py` also exposes `filter_to_allowed_fields()`, the
+prompt-injection containment piece from the artifact's D3: a field value
+not traceable to a known candidate-fact field name is dropped rather than
+silently sent, never passed through on the strength of model output
+alone.
+
+**Nothing calls `evaluate_autonomy()` from production yet** — this ticket
+is the decision engine, settings, and audit trail only
+(`GET`/`PATCH /api/autonomy/settings`, `GET /api/autonomy/decisions`).
+The Apply Executor that will actually call it is a separate, later
+ticket.
 
 ### Recruitment funnel events
 
@@ -178,6 +217,7 @@ JSON endpoints live under `/api/*`. The read-only `/api/public/jobs`, `/search`,
 | `cv_profiles` | `/api/cv-profiles` | CV upload metadata + active profile |
 | `criteria` | `/api/criteria` | Collector search-dimension config |
 | `candidate_facts` | `/api/candidate-facts` | Candidate Fact Store CRUD (manual entry only for now) |
+| `autonomy` | `/api/autonomy` | Autonomy-ladder settings + decision audit log (no production caller yet) |
 | `preference_profiles` | `/api/preference-profile` | Distilled preference signals |
 | `candidate_preferences` | `/api/candidate-preferences` | Questionnaire answers |
 | `excluded_queries` | `/api/excluded-search-queries` | Auto-pruned search queries |

@@ -196,6 +196,26 @@ _SCHEMA = """
 
     CREATE INDEX IF NOT EXISTS idx_candidate_facts_user_active ON candidate_facts(user_id, is_active, fact_type);
 
+    CREATE TABLE IF NOT EXISTS automation_settings (
+        user_id                   INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        max_daily_auto_sends      INTEGER NOT NULL DEFAULT 0,
+        min_confidence_auto_send  REAL NOT NULL DEFAULT 0.9,
+        allowed_auto_send_sources TEXT[] NOT NULL DEFAULT '{}',
+        updated_at                TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS autonomy_decisions (
+        id         INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        job_id     TEXT REFERENCES job_postings(id) ON DELETE SET NULL,
+        level      TEXT NOT NULL,
+        reasons    TEXT[] NOT NULL,
+        inputs     JSONB NOT NULL,
+        decided_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_autonomy_decisions_user_decided ON autonomy_decisions(user_id, decided_at DESC);
+
     CREATE TABLE IF NOT EXISTS criteria (
         id         INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -471,6 +491,10 @@ _CHECK_CONSTRAINTS = [
     (
         "candidate_facts", "candidate_facts_source_check",
         "CHECK (source IN ('cv_upload', 'questionnaire_free_text', 'manual'))",
+    ),
+    (
+        "autonomy_decisions", "autonomy_decisions_level_check",
+        "CHECK (level IN ('auto_send', 'review_then_send', 'ask_first'))",
     ),
 ]
 
