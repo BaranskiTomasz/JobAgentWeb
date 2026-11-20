@@ -251,6 +251,32 @@ letter generator. Whether a failed check should block or merely flag a
 generated document for human review is a policy decision left entirely
 to whichever future caller actually generates candidate-facing text.
 
+### Wiring: CV → facts → plan → decision → execution
+
+The six Wave 1 pieces above are now connected end to end for a
+Greenhouse-sourced job:
+
+1. **`cv_fact_extractor.py`** populates `candidate_facts` automatically
+   on every CV upload (fails open).
+2. **`application_plan_builder.py::build_plan_for_job()`**
+   (`POST /api/jobs/{job_id}/application-plan`) builds a real plan
+   against the job's real Greenhouse schema, auto-filling only
+   `resume_text` from the active CV.
+3. **`apply_decision.py::decide_and_queue()`**
+   (`POST /api/application-plans/{plan_id}/decide`) computes a real
+   `evaluate_autonomy()` decision from the plan's actual grounding
+   state plus the job's real score/company-history, logs it to
+   `autonomy_decisions`, and creates an `application_executions` row.
+
+**Every decision ends at `status = 'pending_manual_action'`, regardless
+of its computed `level`** (`auto_send`/`review_then_send`/`ask_first`)
+— there is still no automated way to submit anything anywhere (see the
+Greenhouse section above), so the level is logged for audit and future
+tuning but doesn't yet branch what actually happens. A human looking at
+a `pending_manual_action` execution is the real, honest state of
+automation in this codebase today — no dashboard surface for that
+review exists yet either.
+
 ### Recruitment funnel events
 
 `job_application_events` records what happens after an application — `response`, `screening`, `interview_scheduled`, `offer`, `rejected_by_employer`, `ghosted`, `withdrawn` — via `POST`/`GET /api/jobs/{job_id}/events` (`routers/jobs.py`, backed by `application_events_repo.py`). It's manual/semi-manual only for now; an automatic mailbox classifier populating it is a separate, later ticket. `event_type` is validated once as a Pydantic `Literal` and kept in sync with a DB-level `CHECK` constraint in `migrations.py`'s `_CHECK_CONSTRAINTS`, matching every other status/type column in this schema.
@@ -369,8 +395,8 @@ JSON endpoints live under `/api/*`. The read-only `/api/public/jobs`, `/search`,
 | `criteria` | `/api/criteria` | Collector search-dimension config |
 | `candidate_facts` | `/api/candidate-facts` | Candidate Fact Store CRUD (manual entry only for now) |
 | `autonomy` | `/api/autonomy` | Autonomy-ladder settings + decision audit log (no production caller yet) |
-| `application_plans` | `/api/application-plans` | Application Plan CRUD (manual entry only for now) |
-| `apply_executions` | `/api/application-plans/{id}/executions`, `/api/executions` | Apply Executor state machine + idempotent creation (no production caller yet) |
+| `application_plans` | `/api/application-plans` | Application Plan CRUD + `/decide` (computes and logs an autonomy decision, creates a pending-manual-action execution) |
+| `apply_executions` | `/api/application-plans/{id}/executions`, `/api/executions` | Apply Executor state machine + idempotent creation; now called by `apply_decision.py` for every plan decision |
 | `preference_profiles` | `/api/preference-profile` | Distilled preference signals |
 | `candidate_preferences` | `/api/candidate-preferences` | Questionnaire answers |
 | `excluded_queries` | `/api/excluded-search-queries` | Auto-pruned search queries |

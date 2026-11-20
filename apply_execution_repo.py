@@ -114,3 +114,12 @@ def get_queued_executions(conn, *, limit: int = 50) -> list[dict]:
         (limit,),
     )
     return [dict(row) for row in cur.fetchall()]
+
+
+def count_executions_today(conn, user_id: int) -> int:
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM application_executions WHERE user_id = %s AND created_at::date = CURRENT_DATE",
+        (user_id,),
+    )
+    return cur.fetchone()[0]

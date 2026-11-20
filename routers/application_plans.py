@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
 import application_plan_repo
+import apply_decision
 from db import get_db
 from deps import get_current_user
 
@@ -23,6 +24,21 @@ class FieldUpsert(BaseModel):
     fact_ids: list[int] = []
     confidence: float | None = None
     is_negotiable_or_irreversible: bool = False
+
+
+@router.post("/{plan_id}/decide")
+def decide_application_plan(
+    plan_id: int,
+    user: dict = Depends(get_current_user),
+    conn=Depends(get_db),
+):
+    plan = application_plan_repo.get_plan(conn, user["id"], plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    try:
+        return apply_decision.decide_and_queue(conn, user["id"], plan_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("")
