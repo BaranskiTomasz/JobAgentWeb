@@ -170,6 +170,18 @@ _SCHEMA = """
     DROP INDEX IF EXISTS idx_user_job_states_user;
     CREATE INDEX IF NOT EXISTS idx_user_job_states_user_status ON user_job_states(user_id, status);
 
+    CREATE TABLE IF NOT EXISTS job_application_events (
+        id          INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        job_id      TEXT NOT NULL REFERENCES job_postings(id) ON DELETE CASCADE,
+        event_type  TEXT NOT NULL,  -- CHECK constraint managed by _CHECK_CONSTRAINTS below, so it can be updated on an already-provisioned DB
+        occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        note        TEXT,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_job_application_events_user_job ON job_application_events(user_id, job_id, occurred_at DESC);
+
     CREATE TABLE IF NOT EXISTS criteria (
         id         INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -431,6 +443,11 @@ _CHECK_CONSTRAINTS = [
     (
         "dismissed_score_items", "dismissed_score_items_item_type_check",
         "CHECK (item_type IN ('pro', 'con'))",
+    ),
+    (
+        "job_application_events", "job_application_events_event_type_check",
+        "CHECK (event_type IN ('response', 'screening', 'interview_scheduled', 'offer', "
+        "'rejected_by_employer', 'ghosted', 'withdrawn'))",
     ),
 ]
 

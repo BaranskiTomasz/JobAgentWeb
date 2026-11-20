@@ -518,6 +518,14 @@ def merge_jobs(conn, left_job_id: str, right_job_id: str, *, survivor_job_id: st
     _merge_compensation(cur, chosen, loser)
     _merge_embeddings(cur, chosen, loser)
     cur.execute("UPDATE dismissed_score_items SET job_id = %s WHERE job_id = %s", (chosen, loser))
+    # job_application_events keys off job_postings(id) directly (not
+    # user_job_states), same as every other job-scoped table here, precisely
+    # so a dedup merge never has to reconcile it against user_job_states's own
+    # per-user row merging above -- re-point it the same simple way as
+    # dismissed_score_items rather than CASCADE-deleting a user's recorded
+    # funnel history (response/interview/offer) when the loser posting row
+    # is removed below.
+    cur.execute("UPDATE job_application_events SET job_id = %s WHERE job_id = %s", (chosen, loser))
 
     cur.execute("DELETE FROM job_postings WHERE id = %s", (loser,))
     audit_evidence = evidence or {"survivor_preference": _source_priority(winner.get("source"))}

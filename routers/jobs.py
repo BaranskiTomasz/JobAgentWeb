@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+import application_events_repo
 import dismissed_items_repo
 import jobs_repo
 from db import get_db
@@ -9,7 +10,7 @@ from deps import (
     require_catalog_automation_client,
 )
 from models import (
-    DismissedItemCreate, JobCreate, JobCreateResult, JobDescriptionUpdate, JobOut,
+    ApplicationEventIn, ApplicationEventOut, DismissedItemCreate, JobCreate, JobCreateResult, JobDescriptionUpdate, JobOut,
     JobRankingBatchUpdate, JobRankingUpdate, JobScoreAndStatusUpdate, JobScoreUpdate,
     JobFactsUpdate, JobStats, JobStatusUpdate, JobStructuredDataUpdate, JobWouldApplyBatchUpdate,
     JobWouldApplyUpdate, WouldApplyStats,
@@ -283,6 +284,29 @@ def update_ranking(job_id: str, body: JobRankingUpdate, user: dict = Depends(get
         body.rank_reason, body.debate_flag, body.debate_note, body.fingerprint,
     )
     return jobs_repo.get_by_id(conn, user["id"], job_id)
+
+
+@router.post("/{job_id}/events", response_model=ApplicationEventOut)
+def create_application_event(
+    job_id: str, body: ApplicationEventIn, user: dict = Depends(get_current_user), conn=Depends(get_db),
+):
+    # event_type is validated by ApplicationEventIn's Literal (models.py) before
+    # this body even runs, so no allow-list check is needed here -- it still has
+    # to be kept in sync with the DB CHECK constraint in migrations.py's
+    # _CHECK_CONSTRAINTS (job_application_events_event_type_check), same as
+    # every other status/type column in this schema.
+    _get_or_404(conn, user["id"], job_id)
+    return application_events_repo.record_event(
+        conn, user["id"], job_id, body.event_type, body.occurred_at, body.note,
+    )
+
+
+@router.get("/{job_id}/events", response_model=list[ApplicationEventOut])
+def list_application_events(
+    job_id: str, user: dict = Depends(get_current_user), conn=Depends(get_db),
+):
+    _get_or_404(conn, user["id"], job_id)
+    return application_events_repo.list_events_for_job(conn, user["id"], job_id)
 
 
 @router.patch("/ranking")

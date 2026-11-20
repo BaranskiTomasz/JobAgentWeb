@@ -4,6 +4,10 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 _JOB_STATUSES = Literal["new", "reviewed", "applied", "rejected", "auto_rejected"]
+_APPLICATION_EVENT_TYPES = Literal[
+    "response", "screening", "interview_scheduled", "offer", "rejected_by_employer",
+    "ghosted", "withdrawn",
+]
 
 
 class JobOut(BaseModel):
@@ -117,6 +121,22 @@ class JobRankingUpdate(BaseModel):
     debate_flag: str | None = None
     debate_note: str | None = None
     fingerprint: str | None = None
+
+
+class ApplicationEventIn(BaseModel):
+    event_type: _APPLICATION_EVENT_TYPES
+    occurred_at: datetime | None = None
+    note: str | None = None
+
+
+class ApplicationEventOut(BaseModel):
+    id: int
+    user_id: int
+    job_id: str
+    event_type: _APPLICATION_EVENT_TYPES
+    occurred_at: datetime
+    note: str | None
+    created_at: datetime
 
 
 class JobRankingBatchItem(JobRankingUpdate):
