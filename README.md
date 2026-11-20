@@ -21,13 +21,45 @@ Search statistics retain a retrieval funnel (`upstream_found`, `query_matched`, 
 The schema splits cleanly in two, defined in `migrations.py`:
 
 - **Shared** (`job_postings`, `job_embeddings`) — a posting's text, source metadata, and LLM-extracted tags are objective facts about the listing, independent of any candidate. Scraped and extracted once, reused by every user who finds the same posting. `job_posting_aliases` retains every source occurrence while `job_dedup_matches` records candidate and completed cross-source decisions.
-- **Per-user** (`user_job_states`, plus `criteria`, `cv_profiles`, `preference_profiles`, `candidate_preferences`, `usage_log`, `cost_summaries`, `search_stats`, `sessions`, `excluded_search_queries`, `dismissed_score_items`) — everything that's a judgment about *this* candidate: status, score, rank, would-apply flag, preferences, CV, cost history. Every one of these tables carries a `user_id` FK with `ON DELETE CASCADE`, so deleting a user's account cleanly removes everything of theirs without touching the shared pool.
+- **Per-user** (`user_job_states`, plus `criteria`, `cv_profiles`, `preference_profiles`, `candidate_preferences`, `usage_log`, `cost_summaries`, `search_stats`, `sessions`, `excluded_search_queries`, `dismissed_score_items`, `candidate_facts`) — everything that's a judgment about *this* candidate: status, score, rank, would-apply flag, preferences, CV, cost history. Every one of these tables carries a `user_id` FK with `ON DELETE CASCADE`, so deleting a user's account cleanly removes everything of theirs without touching the shared pool.
 
 `user_job_states` joins to `job_postings` on `(user_id, job_id)` — one row per (user, posting) pair. This is why "delete jobs" (`jobs_repo.delete_by_filter`) only ever removes `user_job_states` rows: it's removing the posting from *your* view, never the shared posting other users may still have.
 
 Versioned extraction metadata lives in `job_fact_extractions`: schema/model version, source-description hash, canonical facts, provenance, evidence, and indexed role/work fields. Repeated dimensions are normalized into `job_skills`, `job_compensation_bands`, and `job_eligibility`, while `job_postings.structured_data` remains a compatibility projection for existing evaluators. Catalog metadata stores both technology categories and role families, allowing broad engineering listings to be classified without pretending that the discovery query is evidence about the posting. `PUT /api/jobs/{job_id}/facts` replaces all projections atomically, and `GET /api/jobs/missing-facts?schema_version=N` drives safe re-extraction after a schema change. A catalog eligibility-only result is marked `_extraction_tier=catalog_gate`: it is complete for the shared catalog queue but deliberately remains pending for a user's personal extraction queue, which requires complete facts before scoring.
 
 Search statistics retain the full collection funnel and source outcome. The API reports upstream, query, date, geography, known-URL, matcher, duplicate, and insertion counts together with `ok`, `empty`, `partial`, or `error` status, so operators can locate recall losses without reconstructing them from logs. Summary `observed_stages` reports how many searches genuinely measured each upstream/query/date/geo stage; omitted provenance is unknown, not observed.
+
+### Candidate Fact Store
+
+`candidate_facts` holds flat, sourced facts about a candidate (work
+experience, education, skills, certifications, projects, languages,
+achievements) — storage and CRUD only for now, part of the Rada Trzech
+roadmap's Wave 1. The design intent (not yet wired up): every future
+generated document/answer must retrieve from and cite this store rather
+than freely generating candidate claims, so each row deliberately keeps
+`source_quote` (the verbatim excerpt it came from) separate from `value`
+(the structured/paraphrased fact) — this is what a later grounding check
+will pin generated sentences back to. It's a flat list on purpose, not an
+ontology of linked career entities.
+
+`source` is one of `cv_upload` / `questionnaire_free_text` / `manual`;
+`source_ref` is an unconstrained nullable integer (e.g. a `cv_profiles.id`
+when `source='cv_upload'`) — deliberately **not** a foreign key, since its
+target table depends on `source` (same precedent as `job_fact_extractions`
+not FK-ing a polymorphic reference). `fact_type` and `source` are each
+validated once via `candidate_facts_repo.py`'s `VALID_FACT_TYPES`/
+`VALID_SOURCES` and kept in sync with DB-level `CHECK` constraints in
+`migrations.py`, same mechanism as every other status/type column here.
+`is_active` lets a whole source occurrence be retired in one call
+(`deactivate_by_source` — e.g. every fact from a CV that was just
+re-uploaded) without losing the audit trail a hard `delete` would.
+
+`GET`/`POST /api/candidate-facts` and `PATCH .../deactivate` /
+`DELETE /api/candidate-facts/{id}` (`routers/candidate_facts.py`) cover
+manual entry only right now; `POST` always forces `source='manual'`
+server-side regardless of what the client sends. Nothing extracts facts
+from an uploaded CV or the questionnaire into this table yet — that
+wiring, and the grounding-check validator, are separate, later tickets.
 
 ### Recruitment funnel events
 
@@ -145,6 +177,7 @@ JSON endpoints live under `/api/*`. The read-only `/api/public/jobs`, `/search`,
 | `dismissed_items` | `/api/jobs/*`, `/api/dismissed-items` | Score-factor dismissals feeding preference distillation |
 | `cv_profiles` | `/api/cv-profiles` | CV upload metadata + active profile |
 | `criteria` | `/api/criteria` | Collector search-dimension config |
+| `candidate_facts` | `/api/candidate-facts` | Candidate Fact Store CRUD (manual entry only for now) |
 | `preference_profiles` | `/api/preference-profile` | Distilled preference signals |
 | `candidate_preferences` | `/api/candidate-preferences` | Questionnaire answers |
 | `excluded_queries` | `/api/excluded-search-queries` | Auto-pruned search queries |

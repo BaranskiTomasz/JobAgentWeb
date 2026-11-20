@@ -182,6 +182,20 @@ _SCHEMA = """
 
     CREATE INDEX IF NOT EXISTS idx_job_application_events_user_job ON job_application_events(user_id, job_id, occurred_at DESC);
 
+    CREATE TABLE IF NOT EXISTS candidate_facts (
+        id           INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        fact_type    TEXT NOT NULL,
+        value        TEXT NOT NULL,
+        source_quote TEXT,
+        source       TEXT NOT NULL,
+        source_ref   INTEGER,
+        is_active    INTEGER DEFAULT 1,
+        created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_candidate_facts_user_active ON candidate_facts(user_id, is_active, fact_type);
+
     CREATE TABLE IF NOT EXISTS criteria (
         id         INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -448,6 +462,15 @@ _CHECK_CONSTRAINTS = [
         "job_application_events", "job_application_events_event_type_check",
         "CHECK (event_type IN ('response', 'screening', 'interview_scheduled', 'offer', "
         "'rejected_by_employer', 'ghosted', 'withdrawn'))",
+    ),
+    (
+        "candidate_facts", "candidate_facts_fact_type_check",
+        "CHECK (fact_type IN ('work_experience', 'education', 'skill', 'certification', "
+        "'project', 'language', 'achievement', 'other'))",
+    ),
+    (
+        "candidate_facts", "candidate_facts_source_check",
+        "CHECK (source IN ('cv_upload', 'questionnaire_free_text', 'manual'))",
     ),
 ]
 
