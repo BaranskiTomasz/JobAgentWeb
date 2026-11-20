@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 import application_events_repo
+import application_plan_builder
 import dismissed_items_repo
 import jobs_repo
 from db import get_db
@@ -206,6 +207,17 @@ def catalog_urls(
 @router.get("/{job_id}", response_model=JobOut)
 def get_job(job_id: str, user: dict = Depends(get_current_user), conn=Depends(get_db)):
     return _get_or_404(conn, user["id"], job_id)
+
+
+@router.post("/{job_id}/application-plan")
+def build_application_plan(
+    job_id: str, user: dict = Depends(get_current_user), conn=Depends(get_db),
+):
+    _get_or_404(conn, user["id"], job_id)
+    try:
+        return application_plan_builder.build_plan_for_job(conn, user["id"], job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/{job_id}/aliases")

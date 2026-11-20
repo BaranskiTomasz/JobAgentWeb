@@ -147,10 +147,24 @@ is not retroactively recomputed if a cited fact is later hard-deleted
 because facts are normally `deactivate`d, not deleted; worth revisiting
 only if it becomes a real problem.
 
-**Nothing builds a plan's actual content from a real job posting yet**
-(`routers/application_plans.py` covers manual CRUD only) — the field-
-name-to-ATS-mapping logic and the Apply Executor that drives all of this
-are separate, later tickets.
+`application_plan_builder.py::build_plan_for_job()` (called via
+`POST /api/jobs/{job_id}/application-plan`, `routers/jobs.py`) builds a
+real plan skeleton against a **Greenhouse** job's real schema — the
+only field it auto-fills is `resume_text` (copied verbatim from the
+candidate's active CV) when the schema has one; everything else a
+required field needs is reported through the existing
+`missing_required_fields()`. **No cover-letter or custom-question
+generation exists anywhere in this codebase** — synthesizing free-text
+answers on the candidate's behalf is a substantial, separate feature
+decision (exactly what the grounding check exists to gate), not
+something this ticket attempts even a first version of. The auto-filled
+`resume_text` field is deliberately **not** marked `is_grounded`
+(no `fact_ids` are attached) even though it's trustworthy by
+construction — it isn't tied to a specific `candidate_facts` row, and a
+mostly-empty, ungrounded plan correctly routes the autonomy ladder
+toward `ask_first` rather than pretending to be more complete than it
+is. The builder never calls `mark_ready()` — that stays a decision for
+whoever reviews the plan, not something built automatically.
 
 ### Apply Executor state machine
 
