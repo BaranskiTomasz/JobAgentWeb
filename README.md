@@ -21,7 +21,7 @@ Search statistics retain a retrieval funnel (`upstream_found`, `query_matched`, 
 The schema splits cleanly in two, defined in `migrations.py`:
 
 - **Shared** (`job_postings`, `job_embeddings`) — a posting's text, source metadata, and LLM-extracted tags are objective facts about the listing, independent of any candidate. Scraped and extracted once, reused by every user who finds the same posting. `job_posting_aliases` retains every source occurrence while `job_dedup_matches` records candidate and completed cross-source decisions.
-- **Per-user** (`user_job_states`, plus `criteria`, `cv_profiles`, `preference_profiles`, `candidate_preferences`, `usage_log`, `cost_summaries`, `search_stats`, `sessions`, `excluded_search_queries`, `dismissed_score_items`, `candidate_facts`, `automation_settings`, `autonomy_decisions`, `application_plans`, `application_plan_fields`) — everything that's a judgment about *this* candidate: status, score, rank, would-apply flag, preferences, CV, cost history. Every one of these tables carries a `user_id` FK with `ON DELETE CASCADE`, so deleting a user's account cleanly removes everything of theirs without touching the shared pool. `application_plan_field_facts` has no `user_id` of its own — it's scoped transitively through `application_plan_fields.plan_id` → `application_plans.user_id`.
+- **Per-user** (`user_job_states`, plus `criteria`, `cv_profiles`, `preference_profiles`, `candidate_preferences`, `usage_log`, `cost_summaries`, `search_stats`, `sessions`, `excluded_search_queries`, `dismissed_score_items`, `candidate_facts`, `automation_settings`, `autonomy_decisions`, `application_plans`, `application_plan_fields`, `application_executions`) — everything that's a judgment about *this* candidate: status, score, rank, would-apply flag, preferences, CV, cost history. Every one of these tables carries a `user_id` FK with `ON DELETE CASCADE`, so deleting a user's account cleanly removes everything of theirs without touching the shared pool. `application_plan_field_facts` has no `user_id` of its own — it's scoped transitively through `application_plan_fields.plan_id` → `application_plans.user_id`.
 
 `user_job_states` joins to `job_postings` on `(user_id, job_id)` — one row per (user, posting) pair. This is why "delete jobs" (`jobs_repo.delete_by_filter`) only ever removes `user_job_states` rows: it's removing the posting from *your* view, never the shared posting other users may still have.
 
@@ -137,6 +137,37 @@ only if it becomes a real problem.
 (`routers/application_plans.py` covers manual CRUD only) — the field-
 name-to-ATS-mapping logic and the Apply Executor that drives all of this
 are separate, later tickets.
+
+### Apply Executor state machine
+
+`application_executions` is one row per *attempt* to send an
+`application_plan` — kept separate from the plan itself because a plan
+can be retried across several failed attempts without being rebuilt.
+`apply_executor.py::validate_transition()` is a pure state machine over
+`queued → in_progress → {pending_manual_action, sent, send_failed,
+cancelled}`, plus `pending_manual_action → {in_progress, sent,
+send_failed, cancelled}`, `send_failed → {queued, cancelled}` (the retry
+path), and `sent → withdrawn`. Deliberately strict: a same-status call
+(e.g. `queued → queued`) is **not** treated as a no-op and raises, same
+as any other disallowed transition — callers rely on request-level
+idempotency instead (see below), not on the state machine quietly
+accepting a repeat.
+
+There is no separate "exception queue" table — querying
+`application_executions` for `status = 'send_failed'` *is* the queue.
+
+`apply_execution_repo.py::create_execution()` is idempotent on a
+caller-supplied `idempotency_key` (`UNIQUE` column): calling it twice
+with the same key returns the same row both times rather than creating a
+second attempt — the property the whole ticket exists for, since a crash
+mid-send must be safely retryable without double-submitting a real job
+application. `get_queued_executions()` is the polling query a future
+executor loop will use (cross-user, oldest first) — **nothing calls it
+from production yet**, same as every other Wave 1 ticket so far:
+`routers/apply_executions.py` covers manual CRUD + status transitions
+only. No browser automation, ATS HTTP calls, or LLM calls exist anywhere
+in this ticket — the first real sender is the Greenhouse adapter, a
+separate, later ticket.
 
 ### Recruitment funnel events
 
@@ -257,6 +288,7 @@ JSON endpoints live under `/api/*`. The read-only `/api/public/jobs`, `/search`,
 | `candidate_facts` | `/api/candidate-facts` | Candidate Fact Store CRUD (manual entry only for now) |
 | `autonomy` | `/api/autonomy` | Autonomy-ladder settings + decision audit log (no production caller yet) |
 | `application_plans` | `/api/application-plans` | Application Plan CRUD (manual entry only for now) |
+| `apply_executions` | `/api/application-plans/{id}/executions`, `/api/executions` | Apply Executor state machine + idempotent creation (no production caller yet) |
 | `preference_profiles` | `/api/preference-profile` | Distilled preference signals |
 | `candidate_preferences` | `/api/candidate-preferences` | Questionnaire answers |
 | `excluded_queries` | `/api/excluded-search-queries` | Auto-pruned search queries |

@@ -227,6 +227,22 @@ _SCHEMA = """
 
     CREATE INDEX IF NOT EXISTS idx_application_plans_user_job ON application_plans(user_id, job_id);
 
+    CREATE TABLE IF NOT EXISTS application_executions (
+        id                      INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id                 INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        plan_id                 INTEGER NOT NULL REFERENCES application_plans(id) ON DELETE CASCADE,
+        autonomy_decision_id    INTEGER REFERENCES autonomy_decisions(id) ON DELETE SET NULL,
+        idempotency_key         TEXT NOT NULL UNIQUE,
+        status                  TEXT NOT NULL DEFAULT 'queued',
+        attempt_count           INTEGER NOT NULL DEFAULT 0,
+        last_error              TEXT,
+        external_application_id TEXT,
+        created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_application_executions_user_status ON application_executions(user_id, status);
+
     CREATE TABLE IF NOT EXISTS application_plan_fields (
         id                             INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         plan_id                        INTEGER NOT NULL REFERENCES application_plans(id) ON DELETE CASCADE,
@@ -529,6 +545,11 @@ _CHECK_CONSTRAINTS = [
     (
         "application_plans", "application_plans_status_check",
         "CHECK (status IN ('draft', 'ready', 'superseded'))",
+    ),
+    (
+        "application_executions", "application_executions_status_check",
+        "CHECK (status IN ('queued', 'in_progress', 'pending_manual_action', 'sent', "
+        "'send_failed', 'withdrawn', 'cancelled'))",
     ),
 ]
 

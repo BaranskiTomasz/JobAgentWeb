@@ -50,7 +50,7 @@ def _clean_tables():
                      usage_log, cost_summaries, excluded_search_queries,
                      candidate_preferences, dismissed_score_items, search_stats,
                      candidate_facts, automation_settings, autonomy_decisions,
-                     application_plans
+                     application_plans, application_executions
             RESTART IDENTITY CASCADE
         """)
         conn.commit()
