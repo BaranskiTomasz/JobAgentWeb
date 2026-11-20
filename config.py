@@ -45,6 +45,7 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 CLAUDE_EXTRACT_MODEL = os.getenv("CLAUDE_EXTRACT_MODEL", "claude-haiku-4-5-20251001")
 CLAUDE_CATALOG_EXTRACT_MODEL = os.getenv("CLAUDE_CATALOG_EXTRACT_MODEL", "claude-haiku-5-5")
 CLAUDE_GROUNDING_CHECK_MODEL = os.getenv("CLAUDE_GROUNDING_CHECK_MODEL", "claude-haiku-5-5")
+CLAUDE_FACT_EXTRACT_MODEL = os.getenv("CLAUDE_FACT_EXTRACT_MODEL", "claude-haiku-5-5")
 
 # Intentionally limited to models used by this service's own extraction.
 MODEL_COSTS: dict[str, tuple[float, float]] = {

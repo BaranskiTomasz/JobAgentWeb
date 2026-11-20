@@ -56,10 +56,24 @@ re-uploaded) without losing the audit trail a hard `delete` would.
 
 `GET`/`POST /api/candidate-facts` and `PATCH .../deactivate` /
 `DELETE /api/candidate-facts/{id}` (`routers/candidate_facts.py`) cover
-manual entry only right now; `POST` always forces `source='manual'`
-server-side regardless of what the client sends. Nothing extracts facts
-from an uploaded CV or the questionnaire into this table yet — that
-wiring, and the grounding-check validator, are separate, later tickets.
+manual entry; `POST` always forces `source='manual'` server-side
+regardless of what the client sends.
+
+`cv_fact_extractor.py::extract_facts_from_cv()` automatically populates
+this table whenever a new CV is uploaded — `routers/cv_profiles.py`'s
+`create_profile` calls it on the CV's `raw_text` right after inserting
+the new profile, deactivating the *previous* active CV's facts first
+(via `deactivate_by_source`) so an old CV's claims don't linger
+alongside a new one's. **Fails open, deliberately the opposite of the
+grounding check's fail-closed behavior**: any extraction error is
+caught, logged, and swallowed — the CV upload itself must never fail
+because fact extraction did, and a failed extraction just means no
+facts get added this time, not a safety hazard. The DB write for the
+extracted facts runs inside its own `SAVEPOINT`, so a storage failure
+there can't poison the same transaction as the CV profile insert that
+already succeeded. Questionnaire free-text extraction (`open_notes`) is
+a separate, smaller follow-up, not built here; so is the
+grounding-check validator's actual wiring into anything.
 
 ### Autonomy ladder + audit log
 
