@@ -198,6 +198,31 @@ gender, veteran status) that this code deliberately never reads, parses,
 or surfaces, under any circumstance** — no automated system has
 business touching protected-class voluntary disclosure data.
 
+### Grounding check
+
+`grounding_check.py::check_grounding(text, facts)` verifies that a piece
+of generated text makes no claim beyond what a given list of
+`candidate_facts`-shaped dicts actually supports — the safety net the
+Candidate Fact Store exists for ("every generated sentence must cite a
+sourced fact, or the executor will hallucinate in the user's name"). A
+single cheap Haiku tool-use call (`submit_grounding_check`) reports any
+unsupported sentence/clause plus why; the system prompt explicitly
+tolerates a reasonable paraphrase or a sentence synthesizing multiple
+facts together — it's meant to catch outright fabrication, not police
+phrasing.
+
+**Fails closed, deliberately the opposite of `extract_job`'s own
+fail-open behavior**: any API error, an unexpected `stop_reason`, or a
+missing tool-use block all return `is_fully_grounded=False` with a
+synthetic explanatory entry, never a silent pass. A check that can't
+run must never be treated as "everything's fine."
+
+**Nothing calls `check_grounding` from anywhere in this codebase yet**
+— no route, no wiring into the Apply Executor or any future CV/cover-
+letter generator. Whether a failed check should block or merely flag a
+generated document for human review is a policy decision left entirely
+to whichever future caller actually generates candidate-facing text.
+
 ### Recruitment funnel events
 
 `job_application_events` records what happens after an application — `response`, `screening`, `interview_scheduled`, `offer`, `rejected_by_employer`, `ghosted`, `withdrawn` — via `POST`/`GET /api/jobs/{job_id}/events` (`routers/jobs.py`, backed by `application_events_repo.py`). It's manual/semi-manual only for now; an automatic mailbox classifier populating it is a separate, later ticket. `event_type` is validated once as a Pydantic `Literal` and kept in sync with a DB-level `CHECK` constraint in `migrations.py`'s `_CHECK_CONSTRAINTS`, matching every other status/type column in this schema.
