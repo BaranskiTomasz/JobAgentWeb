@@ -29,6 +29,12 @@ Versioned extraction metadata lives in `job_fact_extractions`: schema/model vers
 
 Search statistics retain the full collection funnel and source outcome. The API reports upstream, query, date, geography, known-URL, matcher, duplicate, and insertion counts together with `ok`, `empty`, `partial`, or `error` status, so operators can locate recall losses without reconstructing them from logs. Summary `observed_stages` reports how many searches genuinely measured each upstream/query/date/geo stage; omitted provenance is unknown, not observed.
 
+### Recruitment funnel events
+
+`job_application_events` records what happens after an application — `response`, `screening`, `interview_scheduled`, `offer`, `rejected_by_employer`, `ghosted`, `withdrawn` — via `POST`/`GET /api/jobs/{job_id}/events` (`routers/jobs.py`, backed by `application_events_repo.py`). It's manual/semi-manual only for now; an automatic mailbox classifier populating it is a separate, later ticket. `event_type` is validated once as a Pydantic `Literal` and kept in sync with a DB-level `CHECK` constraint in `migrations.py`'s `_CHECK_CONSTRAINTS`, matching every other status/type column in this schema.
+
+The table keys off `job_postings(id)` and `users(id)` directly, **not** `user_job_states(user_id, job_id)` — `dedup_repo.py`'s `_merge_user_states` mutates or deletes `user_job_states` rows in place during a dedup merge, which would otherwise abort the merge transaction or silently cascade-delete a user's recorded funnel history. `merge_jobs` re-points `job_application_events` the same way it already does for `dismissed_score_items`, before the losing posting row is deleted.
+
 ### Score and ranking fingerprints
 
 JobAgentWeb stores `score_fingerprint` and `ranking_fingerprint` as opaque values. It neither computes, validates, nor invalidates them, because their inputs belong to JobAgent. Consumers of scored or ranked data must compute the current expected fingerprint and compare it before treating a stored score or rank as fresh; otherwise an endpoint may return a stale value together with its old fingerprint.
@@ -135,7 +141,7 @@ JSON endpoints live under `/api/*`. The read-only `/api/public/jobs`, `/search`,
 |--------|--------|--------|
 | `auth` | `/login`, `/register`, `/logout` | Session lifecycle |
 | `admin` | `/admin` | User list + delete (admin only) |
-| `jobs` | `/api/jobs` | Search, stats, status/score/ranking updates, feedback export |
+| `jobs` | `/api/jobs` | Search, stats, status/score/ranking updates, feedback export, recruitment funnel events (`/{job_id}/events`) |
 | `dismissed_items` | `/api/jobs/*`, `/api/dismissed-items` | Score-factor dismissals feeding preference distillation |
 | `cv_profiles` | `/api/cv-profiles` | CV upload metadata + active profile |
 | `criteria` | `/api/criteria` | Collector search-dimension config |
